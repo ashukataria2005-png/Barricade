@@ -9,10 +9,12 @@ import {
   MessageSquare,
   Gem,
   ChevronRight,
-  X
+  X,
+  Bot,
+  Cpu
 } from 'lucide-react';
 
-export default function GameBoard({ gameMinutes = 3, onBack }) {
+export default function GameBoard({ gameMinutes = 3, gameMode = 'ranked', onBack }) {
   const initialSeconds = (gameMinutes || 3) * 60;
 
   // Turn: 'red' | 'blue'
@@ -40,6 +42,9 @@ export default function GameBoard({ gameMinutes = 3, onBack }) {
   // Result state: { winner: 'red' | 'blue', reason: string, isYouWin: boolean, eloDelta: number }
   const [gameResult, setGameResult] = useState(null);
   const [warningMsg, setWarningMsg] = useState('');
+
+  // AI thinking state
+  const [isAiThinking, setIsAiThinking] = useState(false);
 
   // Double tap confirmation states
   const [confirmResign, setConfirmResign] = useState(false);
@@ -74,7 +79,7 @@ export default function GameBoard({ gameMinutes = 3, onBack }) {
           if (prev <= 1) {
             setGameResult({
               winner: 'red',
-              reason: 'Blue player timed out',
+              reason: gameMode === 'ai' ? 'StockBot timed out' : 'Blue player timed out',
               isYouWin: true,
               eloDelta: +12,
             });
@@ -85,7 +90,7 @@ export default function GameBoard({ gameMinutes = 3, onBack }) {
       }
     }, 1000);
     return () => clearInterval(interval);
-  }, [turn, gameResult]);
+  }, [turn, gameResult, gameMode]);
 
   const formatClock = (secs) => {
     const m = Math.floor(secs / 60);
@@ -133,6 +138,7 @@ export default function GameBoard({ gameMinutes = 3, onBack }) {
     return false;
   };
 
+  // BFS check: whether a path exists to targetRow
   const hasPathToGoal = (startPos, targetRow, wallList) => {
     const queue = [{ r: startPos.r, c: startPos.c }];
     const visited = new Set();
@@ -164,6 +170,44 @@ export default function GameBoard({ gameMinutes = 3, onBack }) {
       }
     }
     return false;
+  };
+
+  // BFS Shortest Path: returns array of points [{ r, c }, ...] to targetRow
+  const getShortestPath = (startPos, targetRow, wallList) => {
+    const queue = [{ r: startPos.r, c: startPos.c, path: [{ r: startPos.r, c: startPos.c }] }];
+    const visited = new Set();
+    visited.add(`${startPos.r},${startPos.c}`);
+
+    // Direction priority: prefer moving towards targetRow
+    const deltas = [
+      { r: targetRow === 8 ? 1 : -1, c: 0 },
+      { r: 0, c: 1 },
+      { r: 0, c: -1 },
+      { r: targetRow === 8 ? -1 : 1, c: 0 },
+    ];
+
+    while (queue.length > 0) {
+      const { r, c, path } = queue.shift();
+      if (r === targetRow) return path;
+
+      for (let d of deltas) {
+        const nr = r + d.r;
+        const nc = c + d.c;
+        if (nr >= 0 && nr < 9 && nc >= 0 && nc < 9) {
+          const key = `${nr},${nc}`;
+          if (!visited.has(key) && !isWallBetween(r, c, nr, nc, wallList)) {
+            visited.add(key);
+            queue.push({ r: nr, c: nc, path: [...path, { r: nr, c: nc }] });
+          }
+        }
+      }
+    }
+    return null;
+  };
+
+  const getShortestPathLength = (startPos, targetRow, wallList) => {
+    const path = getShortestPath(startPos, targetRow, wallList);
+    return path ? path.length - 1 : Infinity;
   };
 
   const getValidMoves = (pos, otherPos) => {
@@ -204,8 +248,133 @@ export default function GameBoard({ gameMinutes = 3, onBack }) {
     return moves;
   };
 
+  // 🤖 SMART AI DECISION ENGINE (StockBot)
+  const executeAiTurn = () => {
+    if (gameResult) return;
+
+    // 1. Calculate current shortest paths
+    const redPath = getShortestPath(redPos, 0, walls);
+    const bluePath = getShortestPath(bluePos, 8, walls);
+    const redDist = redPath ? redPath.length - 1 : Infinity;
+    const blueDist = bluePath ? bluePath.length - 1 : Infinity;
+
+    // 2. Wall Placement Strategy:
+    // If Red is <= 4 steps from winning (or imminent threat) and Blue has walls
+    let bestWall = null;
+    let maxGain = 0;
+
+    const shouldConsiderWall = blueWalls > 0 && (redDist <= 4 || (blueDist > redDist && blueWalls > 2));
+    const wallProbability = redDist <= 2 ? 0.90 : 0.40;
+
+    if (shouldConsiderWall && Math.random() < wallProbability) {
+      // Test candidate walls to see which one creates the biggest delay for Red
+      for (let r = 0; r < 8; r++) {
+        for (let c = 0; c < 8; c++) {
+          for (let orientation of ['h', 'v']) {
+            // Check wall collision / overlap
+            const overlap = walls.some((w) => {
+              if (w.r === r && w.c === c) return true;
+              if (orientation === 'h') {
+                if (w.orientation === 'h' && w.r === r && Math.abs(w.c - c) <= 1) return true;
+              } else {
+                if (w.orientation === 'v' && w.c === c && Math.abs(w.r - r) <= 1) return true;
+              }
+              return false;
+            });
+
+            if (!overlap) {
+              const testWalls = [...walls, { r, c, orientation }];
+              // Both players must still have at least one valid path
+              if (hasPathToGoal(redPos, 0, testWalls) && hasPathToGoal(bluePos, 8, testWalls)) {
+                const newRedDist = getShortestPathLength(redPos, 0, testWalls);
+                const newBlueDist = getShortestPathLength(bluePos, 8, testWalls);
+
+                const redIncrease = newRedDist - redDist;
+                const blueIncrease = newBlueDist - blueDist;
+                const gain = redIncrease - blueIncrease;
+
+                // Wall must effectively block Red without hurting Blue more
+                if (redIncrease > 0 && gain > maxGain) {
+                  maxGain = gain;
+                  bestWall = { r, c, orientation };
+                }
+              }
+            }
+          }
+        }
+      }
+    }
+
+    // If an effective wall is found
+    if (bestWall && maxGain > 0) {
+      setWalls((prev) => [...prev, bestWall]);
+      setBlueWalls((prev) => prev - 1);
+      setTurn('red');
+      return;
+    }
+
+    // 3. Pawn Move (Failsafe or Primary Action)
+    const validMoves = getValidMoves(bluePos, redPos);
+    if (validMoves.length > 0) {
+      // Immediate win condition
+      const directWin = validMoves.find((m) => m.r === 8);
+      if (directWin) {
+        setBluePos(directWin);
+        setGameResult({
+          winner: 'blue',
+          reason: 'StockBot reached the goal first',
+          isYouWin: false,
+          eloDelta: -10,
+        });
+        return;
+      }
+
+      // Pick move that minimizes distance to row 8
+      let bestMove = validMoves[0];
+      let minDistance = Infinity;
+
+      for (const move of validMoves) {
+        const dist = getShortestPathLength(move, 8, walls);
+        if (dist < minDistance) {
+          minDistance = dist;
+          bestMove = move;
+        }
+      }
+
+      setBluePos(bestMove);
+      if (bestMove.r === 8) {
+        setGameResult({
+          winner: 'blue',
+          reason: 'StockBot reached the goal first',
+          isYouWin: false,
+          eloDelta: -10,
+        });
+      } else {
+        setTurn('red');
+      }
+    }
+  };
+
+  // AI Hook: Triggers automatically on Blue's turn in 'ai' mode with a 600ms natural delay
+  useEffect(() => {
+    if (gameMode !== 'ai' || turn !== 'blue' || gameResult) {
+      setIsAiThinking(false);
+      return;
+    }
+
+    setIsAiThinking(true);
+    const timer = setTimeout(() => {
+      executeAiTurn();
+      setIsAiThinking(false);
+    }, 600);
+
+    return () => clearTimeout(timer);
+  }, [turn, gameMode, gameResult, walls, redPos, bluePos, blueWalls]);
+
   const handleCellClick = (r, c) => {
     if (gameResult) return;
+    // Disable board interaction during AI's turn
+    if (gameMode === 'ai' && turn === 'blue') return;
 
     const currentPos = turn === 'red' ? redPos : bluePos;
     const otherPos = turn === 'red' ? bluePos : redPos;
@@ -217,7 +386,7 @@ export default function GameBoard({ gameMinutes = 3, onBack }) {
         if (r === 0) {
           setGameResult({
             winner: 'red',
-            reason: 'You reached the goal first',
+            reason: gameMode === 'ai' ? 'You defeated StockBot!' : 'You reached the goal first',
             isYouWin: true,
             eloDelta: +12,
           });
@@ -229,7 +398,7 @@ export default function GameBoard({ gameMinutes = 3, onBack }) {
         if (r === 8) {
           setGameResult({
             winner: 'blue',
-            reason: 'kamal47 reached the goal first',
+            reason: 'Player 2 reached the goal first',
             isYouWin: false,
             eloDelta: -11,
           });
@@ -242,6 +411,9 @@ export default function GameBoard({ gameMinutes = 3, onBack }) {
 
   const handlePlaceWall = (r, c) => {
     if (gameResult) return;
+    // Disable wall placement during AI's turn
+    if (gameMode === 'ai' && turn === 'blue') return;
+
     const isRed = turn === 'red';
     const remaining = isRed ? redWalls : blueWalls;
     const activeOrientation = isRed ? redOrientation : blueOrientation;
@@ -321,6 +493,7 @@ export default function GameBoard({ gameMinutes = 3, onBack }) {
     setConfirmResign(false);
     setConfirmBack(false);
     setWarningMsg('');
+    setIsAiThinking(false);
   };
 
   const currentPos = turn === 'red' ? redPos : bluePos;
@@ -329,7 +502,7 @@ export default function GameBoard({ gameMinutes = 3, onBack }) {
 
   return (
     <div className="flex flex-col h-full select-none max-w-md mx-auto justify-between py-1 relative">
-      {/* ───────────────── TOP BAR (Opponent Blue) ───────────────── */}
+      {/* ───────────────── TOP BAR (Opponent Blue / StockBot) ───────────────── */}
       <div
         className={`p-3 rounded-2xl border transition-all duration-200 ${
           turn === 'blue'
@@ -368,11 +541,36 @@ export default function GameBoard({ gameMinutes = 3, onBack }) {
             </button>
           </div>
 
-          <div className="flex items-center gap-2">
-            <div className="w-3.5 h-3.5 rounded-full bg-blue-500 shadow-md shadow-blue-500/50" />
-            <span className="text-sm font-bold text-gray-200">kamal47 (1188) 🇮🇳</span>
-            <span className="text-xs text-blue-400 font-semibold">{blueWalls}/10</span>
-          </div>
+          {/* Opponent Profile: StockBot (AI) vs Kamal / Local */}
+          {gameMode === 'ai' ? (
+            <div className="flex items-center gap-2">
+              <div className="w-7 h-7 rounded-full bg-cyan-950/80 border border-cyan-500/60 flex items-center justify-center text-cyan-400 shadow-md shadow-cyan-500/20">
+                <Bot size={15} />
+              </div>
+              <div className="text-left">
+                <div className="flex items-center gap-1.5">
+                  <span className="text-sm font-bold text-gray-200">StockBot (AI)</span>
+                  <span className="text-[10px] bg-cyan-500/20 text-cyan-300 border border-cyan-500/40 px-1 rounded font-bold">1450</span>
+                </div>
+                {isAiThinking ? (
+                  <div className="flex items-center gap-1 text-[11px] text-cyan-400 font-semibold animate-pulse">
+                    <span className="w-1.5 h-1.5 rounded-full bg-cyan-400 animate-ping" />
+                    <span>StockBot is thinking...</span>
+                  </div>
+                ) : (
+                  <span className="text-[11px] text-blue-400 font-semibold">{blueWalls}/10 barricades</span>
+                )}
+              </div>
+            </div>
+          ) : (
+            <div className="flex items-center gap-2">
+              <div className="w-3.5 h-3.5 rounded-full bg-blue-500 shadow-md shadow-blue-500/50" />
+              <span className="text-sm font-bold text-gray-200">
+                {gameMode === 'local' ? 'Player 2 (Blue)' : 'kamal47 (1188) 🇮🇳'}
+              </span>
+              <span className="text-xs text-blue-400 font-semibold">{blueWalls}/10</span>
+            </div>
+          )}
 
           <div
             className={`px-2.5 py-1 rounded-lg text-xs font-mono font-bold transition-all ${
@@ -385,35 +583,47 @@ export default function GameBoard({ gameMinutes = 3, onBack }) {
           </div>
         </div>
 
-        {/* Blue Wall Controls */}
-        <div className="flex items-center gap-2 mt-2.5">
-          <button
-            type="button"
-            onClick={() => setBlueOrientation('h')}
-            disabled={turn !== 'blue'}
-            className={`flex-1 py-1.5 rounded-xl border text-[11px] font-bold flex items-center justify-center gap-1.5 transition ${
-              blueOrientation === 'h'
-                ? 'bg-blue-500 text-white border-blue-400 shadow-sm'
-                : 'bg-bgDark/60 border-borderDark/60 text-gray-400 hover:text-gray-200'
-            } ${turn !== 'blue' ? 'opacity-40 cursor-not-allowed' : 'cursor-pointer'}`}
-          >
-            <Shield size={12} />
-            <span>Horizontal Wall</span>
-          </button>
-          <button
-            type="button"
-            onClick={() => setBlueOrientation('v')}
-            disabled={turn !== 'blue'}
-            className={`flex-1 py-1.5 rounded-xl border text-[11px] font-bold flex items-center justify-center gap-1.5 transition ${
-              blueOrientation === 'v'
-                ? 'bg-blue-500 text-white border-blue-400 shadow-sm'
-                : 'bg-bgDark/60 border-borderDark/60 text-gray-400 hover:text-gray-200'
-            } ${turn !== 'blue' ? 'opacity-40 cursor-not-allowed' : 'cursor-pointer'}`}
-          >
-            <Shield className="rotate-90" size={12} />
-            <span>Vertical Wall</span>
-          </button>
-        </div>
+        {/* Blue Wall Controls (Only shown for human opponents) */}
+        {gameMode === 'ai' ? (
+          <div className="flex items-center justify-between bg-bgDark/60 border border-borderDark/60 rounded-xl px-3 py-1.5 mt-2.5 text-[11px] text-gray-300">
+            <span className="flex items-center gap-1.5 text-cyan-400 font-medium">
+              <Cpu size={13} />
+              <span>Smart BFS Pathfinding Engine</span>
+            </span>
+            <span className="text-gray-400">
+              AI Inventory: <strong className="text-white font-mono">{blueWalls}</strong>
+            </span>
+          </div>
+        ) : (
+          <div className="flex items-center gap-2 mt-2.5">
+            <button
+              type="button"
+              onClick={() => setBlueOrientation('h')}
+              disabled={turn !== 'blue'}
+              className={`flex-1 py-1.5 rounded-xl border text-[11px] font-bold flex items-center justify-center gap-1.5 transition ${
+                blueOrientation === 'h'
+                  ? 'bg-blue-500 text-white border-blue-400 shadow-sm'
+                  : 'bg-bgDark/60 border-borderDark/60 text-gray-400 hover:text-gray-200'
+              } ${turn !== 'blue' ? 'opacity-40 cursor-not-allowed' : 'cursor-pointer'}`}
+            >
+              <Shield size={12} />
+              <span>Horizontal Wall</span>
+            </button>
+            <button
+              type="button"
+              onClick={() => setBlueOrientation('v')}
+              disabled={turn !== 'blue'}
+              className={`flex-1 py-1.5 rounded-xl border text-[11px] font-bold flex items-center justify-center gap-1.5 transition ${
+                blueOrientation === 'v'
+                  ? 'bg-blue-500 text-white border-blue-400 shadow-sm'
+                  : 'bg-bgDark/60 border-borderDark/60 text-gray-400 hover:text-gray-200'
+              } ${turn !== 'blue' ? 'opacity-40 cursor-not-allowed' : 'cursor-pointer'}`}
+            >
+              <Shield className="rotate-90" size={12} />
+              <span>Vertical Wall</span>
+            </button>
+          </div>
+        )}
       </div>
 
       {/* Warning Notification */}
@@ -432,13 +642,16 @@ export default function GameBoard({ gameMinutes = 3, onBack }) {
               const isRed = redPos.r === r && redPos.c === c;
               const isBlue = bluePos.r === r && bluePos.c === c;
               const isValid = validMoves.some((m) => m.r === r && m.c === c);
+              const isAiTurn = gameMode === 'ai' && turn === 'blue';
 
               return (
                 <div
                   key={`cell-${r}-${c}`}
                   onClick={() => handleCellClick(r, c)}
-                  className={`relative flex items-center justify-center rounded-lg cursor-pointer transition-all aspect-square touch-manipulation ${
-                    isValid
+                  className={`relative flex items-center justify-center rounded-lg transition-all aspect-square touch-manipulation ${
+                    isAiTurn ? 'cursor-not-allowed' : 'cursor-pointer'
+                  } ${
+                    isValid && !isAiTurn
                       ? 'bg-amber-500/20 border-2 border-amber-400 shadow-sm'
                       : 'bg-[#26262a] hover:bg-[#303036] active:bg-[#35353c]'
                   }`}
@@ -449,7 +662,7 @@ export default function GameBoard({ gameMinutes = 3, onBack }) {
                   {isBlue && (
                     <div className="w-6 h-6 rounded-full bg-blue-500 border-2 border-white shadow-lg ring-2 ring-blue-500/40" />
                   )}
-                  {isValid && !isRed && !isBlue && (
+                  {isValid && !isRed && !isBlue && !isAiTurn && (
                     <div className="w-2.5 h-2.5 rounded-full bg-amber-400 animate-pulse" />
                   )}
                 </div>
@@ -500,6 +713,7 @@ export default function GameBoard({ gameMinutes = 3, onBack }) {
             Array.from({ length: 8 }).map((_, c) => {
               const leftPct = (c + 1) * (100 / 9);
               const topPct = (r + 1) * (100 / 9);
+              const isAiTurn = gameMode === 'ai' && turn === 'blue';
 
               return (
                 <div
@@ -510,9 +724,15 @@ export default function GameBoard({ gameMinutes = 3, onBack }) {
                     top: `${topPct}%`,
                     transform: 'translate(-50%, -50%)',
                   }}
-                  className="absolute w-9 h-9 sm:w-11 sm:h-11 rounded-full pointer-events-auto cursor-pointer z-30 transition-all touch-manipulation hover:bg-amber-400/25 active:bg-amber-400/40 active:scale-95 group flex items-center justify-center"
+                  className={`absolute w-9 h-9 sm:w-11 sm:h-11 rounded-full z-30 transition-all touch-manipulation group flex items-center justify-center ${
+                    isAiTurn
+                      ? 'pointer-events-none cursor-not-allowed'
+                      : 'pointer-events-auto cursor-pointer hover:bg-amber-400/25 active:bg-amber-400/40 active:scale-95'
+                  }`}
                 >
-                  <div className="w-1.5 h-1.5 rounded-full bg-amber-400/0 group-hover:bg-amber-400/80 transition-all" />
+                  {!isAiTurn && (
+                    <div className="w-1.5 h-1.5 rounded-full bg-amber-400/0 group-hover:bg-amber-400/80 transition-all" />
+                  )}
                 </div>
               );
             })
@@ -622,7 +842,7 @@ export default function GameBoard({ gameMinutes = 3, onBack }) {
             <p className="text-[10px] text-gray-500 mb-5">
               {gameResult.isYouWin
                 ? 'Set won — excellent victory!'
-                : 'Set complete — opponent won the best of 3.'}
+                : 'Set complete — match ended.'}
             </p>
 
             {/* Primary Action Button (Green) */}
@@ -631,7 +851,7 @@ export default function GameBoard({ gameMinutes = 3, onBack }) {
               onClick={restartGame}
               className="w-full bg-[#22c55e] hover:bg-green-600 active:scale-[0.98] text-white font-bold py-3.5 rounded-2xl text-sm transition shadow-lg shadow-green-500/20 cursor-pointer mb-3"
             >
-              {gameResult.isYouWin ? 'Rematch' : 'New ranked game'}
+              {gameResult.isYouWin ? 'Rematch' : gameMode === 'ai' ? 'Play Again' : 'New ranked game'}
             </button>
 
             {/* Sub Action Buttons (Analyze & Back to Lobby) */}

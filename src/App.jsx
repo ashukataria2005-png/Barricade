@@ -123,6 +123,7 @@ export default function App() {
           {inGame ? (
             <GameBoard
               gameMinutes={selectedMinutes}
+              gameMode={gameMode}
               onBack={() => setInGame(false)}
             />
           ) : (
