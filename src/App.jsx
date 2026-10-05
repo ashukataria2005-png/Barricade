@@ -24,6 +24,7 @@ import {
 import GameBoard from './components/GameBoard';
 import PuzzlesView from './components/PuzzlesView';
 import WatchView from './components/WatchView';
+import KingOfTheHillBoard from './components/KingOfTheHillBoard';
 import { getStoredStats } from './utils/stats';
 
 export default function App() {
@@ -46,6 +47,9 @@ export default function App() {
 
   // Spectator Watch state
   const [isWatchingTv, setIsWatchingTv] = useState(false);
+
+  // King of the Hill 4-Player state
+  const [inKingOfTheHill, setInKingOfTheHill] = useState(false);
 
   // Room modal states
   const [showCreateRoomModal, setShowCreateRoomModal] = useState(false);
@@ -147,7 +151,7 @@ export default function App() {
         )}
 
         {/* Top Header */}
-        {!inGame && !isWatchingTv && (
+        {!inGame && !isWatchingTv && !inKingOfTheHill && (
           <header className="flex items-center justify-between px-4 py-3 bg-bgDark border-b border-borderDark/40">
             <h1 className="text-2xl font-black text-brandOrange tracking-wide">
               Barricade
@@ -170,7 +174,9 @@ export default function App() {
 
         {/* Dynamic Views */}
         <main className="flex-1 overflow-y-auto px-4 py-4">
-          {inGame ? (
+          {inKingOfTheHill ? (
+            <KingOfTheHillBoard onBack={() => setInKingOfTheHill(false)} />
+          ) : inGame ? (
             <GameBoard
               gameMinutes={selectedMinutes}
               gameMode={gameMode}
@@ -257,7 +263,10 @@ export default function App() {
                   </div>
 
                   {/* King of the Hill Announcement */}
-                  <div className="bg-cardDark border border-borderDark/60 rounded-xl p-3 flex items-center justify-between">
+                  <div
+                    onClick={() => setInKingOfTheHill(true)}
+                    className="bg-cardDark border border-borderDark/60 hover:border-brandOrange/60 rounded-xl p-3 flex items-center justify-between cursor-pointer transition"
+                  >
                     <div>
                       <div className="flex items-center gap-2">
                         <span className="flex h-2 w-2 rounded-full bg-brandOrange animate-pulse" />
@@ -265,7 +274,10 @@ export default function App() {
                       </div>
                       <p className="text-[11px] text-gray-400 mt-0.5">4 players race to the crown in the centre</p>
                     </div>
-                    <X className="text-gray-500 cursor-pointer" size={16} />
+                    <div className="flex items-center gap-1 bg-amber-500/10 text-amber-400 border border-amber-500/30 px-2 py-1 rounded-lg text-xs font-bold">
+                      <span>Play</span>
+                      <ChevronRight size={13} />
+                    </div>
                   </div>
 
                   {/* Modes Grid */}
@@ -574,7 +586,7 @@ export default function App() {
         )}
 
         {/* Bottom Navigation */}
-        {!inGame && !isWatchingTv && (
+        {!inGame && !isWatchingTv && !inKingOfTheHill && (
           <nav className="fixed bottom-0 left-0 right-0 max-w-md mx-auto bg-[#18181b] border-t border-borderDark/60 flex items-center justify-around py-2.5 z-40">
             <button
               onClick={() => setActiveTab('play')}

@@ -17,6 +17,7 @@ import {
   History
 } from 'lucide-react';
 import { getStoredStats, recordMatchOutcome } from '../utils/stats';
+import ChatModal from './ChatModal';
 
 // ───────────────── PROCEDURAL WEB AUDIO SYNTHESIZER ─────────────────
 let audioCtx = null;
@@ -193,6 +194,39 @@ export default function GameBoard({ gameMinutes = 3, gameMode = 'ranked', onBack
 
   // Persistent User stats
   const [userStats, setUserStats] = useState(() => getStoredStats());
+
+  // In-Game Chat state & reactions
+  const [isChatOpen, setIsChatOpen] = useState(false);
+  const [chatMessages, setChatMessages] = useState([]);
+  const [floatingBubble, setFloatingBubble] = useState(null);
+
+  const handleSendMessage = (text) => {
+    const timeStr = new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
+    const newMsg = { sender: 'me', text, time: timeStr };
+    setChatMessages((prev) => [...prev, newMsg]);
+    setFloatingBubble({ sender: 'me', text });
+    setTimeout(() => setFloatingBubble((curr) => (curr?.text === text ? null : curr)), 3000);
+
+    // AI opponent reply simulation
+    if (gameMode === 'ai') {
+      setTimeout(() => {
+        const botResponses = [
+          'Well played! 🤝',
+          'Good move! 🧱',
+          'Thanks! 🤖',
+          'Impressive strategy! 🔥',
+          'Thinking... 🤔',
+          'Game on! ⚡'
+        ];
+        const replyText = botResponses[Math.floor(Math.random() * botResponses.length)];
+        const botReply = { sender: 'opponent', text: replyText, time: timeStr };
+        setChatMessages((prev) => [...prev, botReply]);
+        setFloatingBubble({ sender: 'opponent', text: replyText });
+        setTimeout(() => setFloatingBubble((curr) => (curr?.text === replyText ? null : curr)), 3000);
+        playAudio('move');
+      }, 900);
+    }
+  };
 
   // AI thinking state
   const [isAiThinking, setIsAiThinking] = useState(false);
@@ -767,7 +801,27 @@ export default function GameBoard({ gameMinutes = 3, gameMode = 'ranked', onBack
             >
               {isMuted ? <VolumeX size={15} /> : <Volume2 size={15} />}
             </button>
+
+            {/* In-Game Chat Toggle */}
+            <button
+              type="button"
+              onClick={() => setIsChatOpen(true)}
+              className="p-1.5 rounded-lg border text-xs font-semibold bg-cardDark text-gray-400 hover:text-white border-borderDark hover:bg-borderDark transition cursor-pointer relative"
+              title="Open Chat"
+            >
+              <MessageSquare size={15} />
+              {chatMessages.length > 0 && (
+                <span className="absolute -top-1 -right-1 w-2 h-2 rounded-full bg-brandOrange" />
+              )}
+            </button>
           </div>
+
+          {/* Opponent Floating Speech Bubble */}
+          {floatingBubble && floatingBubble.sender === 'opponent' && (
+            <div className="absolute top-14 left-14 z-40 bg-cardDark text-brandOrange border border-brandOrange/80 px-2.5 py-1 rounded-2xl text-xs font-bold shadow-2xl animate-bounce">
+              {floatingBubble.text}
+            </div>
+          )}
 
           {gameMode === 'ai' ? (
             <div className="flex items-center gap-2">
@@ -1068,6 +1122,13 @@ export default function GameBoard({ gameMinutes = 3, gameMode = 'ranked', onBack
             {formatClock(redTime)}
           </div>
         </div>
+
+        {/* Player Floating Speech Bubble */}
+        {floatingBubble && floatingBubble.sender === 'me' && (
+          <div className="absolute -top-8 right-8 z-40 bg-brandOrange text-black px-2.5 py-1 rounded-2xl text-xs font-bold shadow-2xl animate-bounce">
+            {floatingBubble.text}
+          </div>
+        )}
       </div>
 
       {/* ───────────────── RESULT MODAL ───────────────── */}
@@ -1144,6 +1205,7 @@ export default function GameBoard({ gameMinutes = 3, gameMode = 'ranked', onBack
 
             <button
               type="button"
+              onClick={() => setIsChatOpen(true)}
               className="w-full flex items-center justify-center gap-2 bg-[#2c2c2e]/60 hover:bg-[#2c2c2e] text-gray-300 font-semibold py-2.5 rounded-xl text-xs transition mb-4 cursor-pointer"
             >
               <MessageSquare size={14} />
@@ -1160,6 +1222,22 @@ export default function GameBoard({ gameMinutes = 3, gameMode = 'ranked', onBack
           </div>
         </div>
       )}
+
+      {/* In-Game Chat Modal */}
+      <ChatModal
+        isOpen={isChatOpen}
+        onClose={() => setIsChatOpen(false)}
+        gameMode={gameMode}
+        opponentName={
+          gameMode === 'ai'
+            ? 'StockBot (AI)'
+            : gameMode === 'friend'
+            ? 'Friend'
+            : 'kamal47'
+        }
+        onSendMessage={handleSendMessage}
+        messages={chatMessages}
+      />
     </div>
   );
 }
