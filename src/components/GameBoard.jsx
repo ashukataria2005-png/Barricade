@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import {
   ArrowLeft,
   Shield,
@@ -11,8 +11,156 @@ import {
   ChevronRight,
   X,
   Bot,
-  Cpu
+  Cpu,
+  Volume2,
+  VolumeX,
+  History
 } from 'lucide-react';
+
+// ───────────────── PROCEDURAL WEB AUDIO SYNTHESIZER ─────────────────
+let audioCtx = null;
+
+const getAudioContext = () => {
+  if (typeof window === 'undefined') return null;
+  if (!audioCtx) {
+    const AudioContextClass = window.AudioContext || window.webkitAudioContext;
+    if (AudioContextClass) {
+      audioCtx = new AudioContextClass();
+    }
+  }
+  if (audioCtx && audioCtx.state === 'suspended') {
+    audioCtx.resume().catch(() => {});
+  }
+  return audioCtx;
+};
+
+const playMoveSound = (ctx) => {
+  const now = ctx.currentTime;
+  const osc = ctx.createOscillator();
+  const gain = ctx.createGain();
+
+  // Crisp wooden click/tap pitch
+  osc.type = 'triangle';
+  osc.frequency.setValueAtTime(440, now);
+  osc.frequency.exponentialRampToValueAtTime(120, now + 0.05);
+
+  gain.gain.setValueAtTime(0.35, now);
+  gain.gain.exponentialRampToValueAtTime(0.001, now + 0.05);
+
+  osc.connect(gain);
+  gain.connect(ctx.destination);
+
+  osc.start(now);
+  osc.stop(now + 0.055);
+};
+
+const playWallSound = (ctx) => {
+  const now = ctx.currentTime;
+
+  // Heavy wooden thud/slam sound
+  const osc = ctx.createOscillator();
+  const gain = ctx.createGain();
+  osc.type = 'sine';
+  osc.frequency.setValueAtTime(180, now);
+  osc.frequency.exponentialRampToValueAtTime(40, now + 0.11);
+
+  gain.gain.setValueAtTime(0.45, now);
+  gain.gain.exponentialRampToValueAtTime(0.001, now + 0.11);
+
+  osc.connect(gain);
+  gain.connect(ctx.destination);
+  osc.start(now);
+  osc.stop(now + 0.12);
+
+  // Bandpass noise punch for tactile wooden slam
+  try {
+    const bufferSize = Math.floor(ctx.sampleRate * 0.045);
+    const buffer = ctx.createBuffer(1, bufferSize, ctx.sampleRate);
+    const data = buffer.getChannelData(0);
+    for (let i = 0; i < bufferSize; i++) {
+      data[i] = (Math.random() * 2 - 1) * Math.exp(-i / (bufferSize * 0.25));
+    }
+    const noise = ctx.createBufferSource();
+    noise.buffer = buffer;
+    const filter = ctx.createBiquadFilter();
+    filter.type = 'bandpass';
+    filter.frequency.value = 320;
+    const noiseGain = ctx.createGain();
+    noiseGain.gain.setValueAtTime(0.4, now);
+    noiseGain.gain.exponentialRampToValueAtTime(0.001, now + 0.045);
+
+    noise.connect(filter);
+    filter.connect(noiseGain);
+    noiseGain.connect(ctx.destination);
+    noise.start(now);
+  } catch (e) {
+    // fallback if buffer creation fails
+  }
+};
+
+const playInvalidSound = (ctx) => {
+  const now = ctx.currentTime;
+  // Short dull double buzz
+  [0, 0.075].forEach((delay) => {
+    const osc = ctx.createOscillator();
+    const gain = ctx.createGain();
+    osc.type = 'sawtooth';
+    osc.frequency.setValueAtTime(140, now + delay);
+    osc.frequency.setValueAtTime(100, now + delay + 0.045);
+
+    gain.gain.setValueAtTime(0.18, now + delay);
+    gain.gain.exponentialRampToValueAtTime(0.001, now + delay + 0.05);
+
+    osc.connect(gain);
+    gain.connect(ctx.destination);
+    osc.start(now + delay);
+    osc.stop(now + delay + 0.055);
+  });
+};
+
+const playWinSound = (ctx) => {
+  const now = ctx.currentTime;
+  // Celebratory rising chime: A4 -> C#5 -> E5 -> A5
+  const notes = [440, 554.37, 659.25, 880];
+  notes.forEach((freq, idx) => {
+    const osc = ctx.createOscillator();
+    const gain = ctx.createGain();
+    const start = now + idx * 0.085;
+    osc.type = 'sine';
+    osc.frequency.setValueAtTime(freq, start);
+
+    gain.gain.setValueAtTime(0.25, start);
+    gain.gain.exponentialRampToValueAtTime(0.001, start + 0.3);
+
+    osc.connect(gain);
+    gain.connect(ctx.destination);
+    osc.start(start);
+    osc.stop(start + 0.32);
+  });
+};
+
+const playLossSound = (ctx) => {
+  const now = ctx.currentTime;
+  // Descending tone: A4 -> G4 -> F4 -> D4
+  const notes = [440, 392, 349.23, 293.66];
+  notes.forEach((freq, idx) => {
+    const osc = ctx.createOscillator();
+    const gain = ctx.createGain();
+    const start = now + idx * 0.11;
+    osc.type = 'triangle';
+    osc.frequency.setValueAtTime(freq, start);
+
+    gain.gain.setValueAtTime(0.22, start);
+    gain.gain.exponentialRampToValueAtTime(0.001, start + 0.22);
+
+    osc.connect(gain);
+    gain.connect(ctx.destination);
+    osc.start(start);
+    osc.stop(start + 0.24);
+  });
+};
+
+const COLS = ['a', 'b', 'c', 'd', 'e', 'f', 'g', 'h', 'i'];
 
 export default function GameBoard({ gameMinutes = 3, gameMode = 'ranked', onBack }) {
   const initialSeconds = (gameMinutes || 3) * 60;
@@ -43,6 +191,13 @@ export default function GameBoard({ gameMinutes = 3, gameMode = 'ranked', onBack
   const [gameResult, setGameResult] = useState(null);
   const [warningMsg, setWarningMsg] = useState('');
 
+  // Audio mute state
+  const [isMuted, setIsMuted] = useState(false);
+
+  // Move history notation state: [{ player: 'red'|'blue', type: 'pawn'|'wall', notation: string }]
+  const [moveHistory, setMoveHistory] = useState([]);
+  const notationScrollRef = useRef(null);
+
   // AI thinking state
   const [isAiThinking, setIsAiThinking] = useState(false);
 
@@ -50,12 +205,45 @@ export default function GameBoard({ gameMinutes = 3, gameMode = 'ranked', onBack
   const [confirmResign, setConfirmResign] = useState(false);
   const [confirmBack, setConfirmBack] = useState(false);
 
+  // Audio dispatcher
+  const playAudio = (type) => {
+    if (isMuted) return;
+    try {
+      const ctx = getAudioContext();
+      if (!ctx) return;
+      if (type === 'move') playMoveSound(ctx);
+      else if (type === 'wall') playWallSound(ctx);
+      else if (type === 'invalid') playInvalidSound(ctx);
+      else if (type === 'win') playWinSound(ctx);
+      else if (type === 'loss') playLossSound(ctx);
+    } catch (e) {
+      // Audio autoplay policy fallback
+    }
+  };
+
+  // Play result sound when game ends
+  useEffect(() => {
+    if (!gameResult) return;
+    if (gameResult.isYouWin) {
+      playAudio('win');
+    } else {
+      playAudio('loss');
+    }
+  }, [gameResult]);
+
   // Keep timers synchronized when gameMinutes prop updates
   useEffect(() => {
     const secs = (gameMinutes || 3) * 60;
     setBlueTime(secs);
     setRedTime(secs);
   }, [gameMinutes]);
+
+  // Auto-scroll move notation ribbon to latest move
+  useEffect(() => {
+    if (notationScrollRef.current) {
+      notationScrollRef.current.scrollLeft = notationScrollRef.current.scrollWidth;
+    }
+  }, [moveHistory]);
 
   // Turn-based live countdown clocks
   useEffect(() => {
@@ -116,6 +304,7 @@ export default function GameBoard({ gameMinutes = 3, gameMode = 'ranked', onBack
   // Clear warning notification automatically
   useEffect(() => {
     if (warningMsg) {
+      playAudio('invalid');
       const t = setTimeout(() => setWarningMsg(''), 2500);
       return () => clearTimeout(t);
     }
@@ -195,9 +384,11 @@ export default function GameBoard({ gameMinutes = 3, gameMode = 'ranked', onBack
         const nc = c + d.c;
         if (nr >= 0 && nr < 9 && nc >= 0 && nc < 9) {
           const key = `${nr},${nc}`;
-          if (!visited.has(key) && !isWallBetween(r, c, nr, nc, wallList)) {
-            visited.add(key);
-            queue.push({ r: nr, c: nc, path: [...path, { r: nr, c: nc }] });
+          if (!visited.has(key)) {
+            if (!isWallBetween(r, c, nr, nc, wallList)) {
+              visited.add(key);
+              queue.push({ r: nr, c: nc, path: [...path, { r: nr, c: nc }] });
+            }
           }
         }
       }
@@ -259,7 +450,6 @@ export default function GameBoard({ gameMinutes = 3, gameMode = 'ranked', onBack
     const blueDist = bluePath ? bluePath.length - 1 : Infinity;
 
     // 2. Wall Placement Strategy:
-    // If Red is <= 4 steps from winning (or imminent threat) and Blue has walls
     let bestWall = null;
     let maxGain = 0;
 
@@ -267,11 +457,9 @@ export default function GameBoard({ gameMinutes = 3, gameMode = 'ranked', onBack
     const wallProbability = redDist <= 2 ? 0.90 : 0.40;
 
     if (shouldConsiderWall && Math.random() < wallProbability) {
-      // Test candidate walls to see which one creates the biggest delay for Red
       for (let r = 0; r < 8; r++) {
         for (let c = 0; c < 8; c++) {
           for (let orientation of ['h', 'v']) {
-            // Check wall collision / overlap
             const overlap = walls.some((w) => {
               if (w.r === r && w.c === c) return true;
               if (orientation === 'h') {
@@ -284,7 +472,6 @@ export default function GameBoard({ gameMinutes = 3, gameMode = 'ranked', onBack
 
             if (!overlap) {
               const testWalls = [...walls, { r, c, orientation }];
-              // Both players must still have at least one valid path
               if (hasPathToGoal(redPos, 0, testWalls) && hasPathToGoal(bluePos, 8, testWalls)) {
                 const newRedDist = getShortestPathLength(redPos, 0, testWalls);
                 const newBlueDist = getShortestPathLength(bluePos, 8, testWalls);
@@ -293,7 +480,6 @@ export default function GameBoard({ gameMinutes = 3, gameMode = 'ranked', onBack
                 const blueIncrease = newBlueDist - blueDist;
                 const gain = redIncrease - blueIncrease;
 
-                // Wall must effectively block Red without hurting Blue more
                 if (redIncrease > 0 && gain > maxGain) {
                   maxGain = gain;
                   bestWall = { r, c, orientation };
@@ -309,6 +495,12 @@ export default function GameBoard({ gameMinutes = 3, gameMode = 'ranked', onBack
     if (bestWall && maxGain > 0) {
       setWalls((prev) => [...prev, bestWall]);
       setBlueWalls((prev) => prev - 1);
+      playAudio('wall');
+
+      // Add wall notation: e.g. hd5
+      const notation = `${bestWall.orientation}${COLS[bestWall.c]}${8 - bestWall.r}`;
+      setMoveHistory((prev) => [...prev, { player: 'blue', type: 'wall', notation }]);
+
       setTurn('red');
       return;
     }
@@ -320,6 +512,10 @@ export default function GameBoard({ gameMinutes = 3, gameMode = 'ranked', onBack
       const directWin = validMoves.find((m) => m.r === 8);
       if (directWin) {
         setBluePos(directWin);
+        playAudio('move');
+        const notation = `${COLS[directWin.c]}${9 - directWin.r}`;
+        setMoveHistory((prev) => [...prev, { player: 'blue', type: 'pawn', notation }]);
+
         setGameResult({
           winner: 'blue',
           reason: 'StockBot reached the goal first',
@@ -342,6 +538,10 @@ export default function GameBoard({ gameMinutes = 3, gameMode = 'ranked', onBack
       }
 
       setBluePos(bestMove);
+      playAudio('move');
+      const notation = `${COLS[bestMove.c]}${9 - bestMove.r}`;
+      setMoveHistory((prev) => [...prev, { player: 'blue', type: 'pawn', notation }]);
+
       if (bestMove.r === 8) {
         setGameResult({
           winner: 'blue',
@@ -381,6 +581,10 @@ export default function GameBoard({ gameMinutes = 3, gameMode = 'ranked', onBack
     const validMoves = getValidMoves(currentPos, otherPos);
 
     if (validMoves.some((m) => m.r === r && m.c === c)) {
+      playAudio('move');
+      const notation = `${COLS[c]}${9 - r}`;
+      setMoveHistory((prev) => [...prev, { player: turn, type: 'pawn', notation }]);
+
       if (turn === 'red') {
         setRedPos({ r, c });
         if (r === 0) {
@@ -446,6 +650,11 @@ export default function GameBoard({ gameMinutes = 3, gameMode = 'ranked', onBack
     }
 
     setWalls(testWalls);
+    playAudio('wall');
+
+    const notation = `${activeOrientation}${COLS[c]}${8 - r}`;
+    setMoveHistory((prev) => [...prev, { player: turn, type: 'wall', notation }]);
+
     if (isRed) {
       setRedWalls((prev) => prev - 1);
       setTurn('blue');
@@ -494,11 +703,22 @@ export default function GameBoard({ gameMinutes = 3, gameMode = 'ranked', onBack
     setConfirmBack(false);
     setWarningMsg('');
     setIsAiThinking(false);
+    setMoveHistory([]);
   };
 
   const currentPos = turn === 'red' ? redPos : bluePos;
   const otherPos = turn === 'red' ? bluePos : redPos;
   const validMoves = getValidMoves(currentPos, otherPos);
+
+  // Group moves into turn rounds (1. Red Blue  2. Red Blue)
+  const rounds = [];
+  for (let i = 0; i < moveHistory.length; i += 2) {
+    rounds.push({
+      roundNum: Math.floor(i / 2) + 1,
+      red: moveHistory[i],
+      blue: moveHistory[i + 1] || null,
+    });
+  }
 
   return (
     <div className="flex flex-col h-full select-none max-w-md mx-auto justify-between py-1 relative">
@@ -530,14 +750,28 @@ export default function GameBoard({ gameMinutes = 3, gameMode = 'ranked', onBack
             <button
               type="button"
               onClick={handleResignClick}
-              className={`flex items-center gap-1 px-2.5 py-1 rounded-lg border text-xs font-semibold transition cursor-pointer ${
+              className={`flex items-center gap-1 px-2 py-1 rounded-lg border text-xs font-semibold transition cursor-pointer ${
                 confirmResign
                   ? 'bg-red-600 text-white border-red-500 animate-pulse shadow-md'
                   : 'bg-cardDark hover:bg-borderDark border-borderDark text-gray-400 hover:text-gray-200'
               }`}
             >
               <Flag size={13} />
-              <span>{confirmResign ? 'Confirm Resign?' : 'Resign'}</span>
+              <span>{confirmResign ? 'Confirm?' : 'Resign'}</span>
+            </button>
+
+            {/* Mute/Unmute Audio Toggle */}
+            <button
+              type="button"
+              onClick={() => setIsMuted((prev) => !prev)}
+              className={`p-1.5 rounded-lg border text-xs font-semibold transition cursor-pointer ${
+                isMuted
+                  ? 'bg-cardDark text-gray-500 border-borderDark hover:text-gray-300'
+                  : 'bg-cardDark text-cyan-400 border-borderDark hover:bg-borderDark'
+              }`}
+              title={isMuted ? 'Unmute sounds' : 'Mute sounds'}
+            >
+              {isMuted ? <VolumeX size={15} /> : <Volume2 size={15} />}
             </button>
           </div>
 
@@ -624,6 +858,50 @@ export default function GameBoard({ gameMinutes = 3, gameMode = 'ranked', onBack
             </button>
           </div>
         )}
+      </div>
+
+      {/* ───────────────── LIVE MOVE NOTATION RIBBON ───────────────── */}
+      <div className="w-full bg-[#18181b]/90 border border-borderDark/60 rounded-xl px-3 py-1.5 my-1.5 flex items-center gap-2 overflow-hidden shadow-inner">
+        <div className="flex items-center gap-1 text-[10px] font-bold text-gray-400 uppercase tracking-wider shrink-0 select-none">
+          <History size={12} className="text-brandOrange" />
+          <span>Moves</span>
+        </div>
+        <div
+          ref={notationScrollRef}
+          className="flex-1 flex items-center gap-2 overflow-x-auto py-0.5"
+          style={{ scrollbarWidth: 'none', msOverflowStyle: 'none' }}
+        >
+          {rounds.length === 0 ? (
+            <span className="text-[11px] text-gray-500 italic">Game start · Red to move</span>
+          ) : (
+            rounds.map((round) => (
+              <div
+                key={round.roundNum}
+                className="flex items-center gap-1 shrink-0 bg-cardDark/90 border border-borderDark/50 px-2 py-0.5 rounded-lg text-[11px] font-mono shadow-xs"
+              >
+                <span className="text-gray-500 font-semibold">{round.roundNum}.</span>
+                <span
+                  className={`font-bold ${
+                    round.red?.type === 'wall' ? 'text-amber-400' : 'text-rose-400'
+                  }`}
+                  title={`${round.red?.type === 'wall' ? 'Wall' : 'Move'}: ${round.red?.notation}`}
+                >
+                  {round.red?.notation}
+                </span>
+                {round.blue && (
+                  <span
+                    className={`font-bold ml-1 ${
+                      round.blue?.type === 'wall' ? 'text-amber-400' : 'text-blue-400'
+                    }`}
+                    title={`${round.blue?.type === 'wall' ? 'Wall' : 'Move'}: ${round.blue?.notation}`}
+                  >
+                    {round.blue?.notation}
+                  </span>
+                )}
+              </div>
+            ))
+          )}
+        </div>
       </div>
 
       {/* Warning Notification */}
