@@ -8,3 +8,17 @@ createRoot(document.getElementById('root')).render(
     <App />
   </StrictMode>,
 )
+
+// Register Offline PWA Service Worker
+if ('serviceWorker' in navigator && process.env.NODE_ENV === 'production') {
+  window.addEventListener('load', () => {
+    navigator.serviceWorker
+      .register('/sw.js')
+      .then((reg) => {
+        console.log('Barricade ServiceWorker registered successfully:', reg.scope);
+      })
+      .catch((err) => {
+        console.warn('Barricade ServiceWorker registration failed:', err);
+      });
+  });
+}

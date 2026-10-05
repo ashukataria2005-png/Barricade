@@ -18,7 +18,7 @@ import {
   Undo2,
   Sliders
 } from 'lucide-react';
-import { getStoredStats, recordMatchOutcome } from '../utils/stats';
+import { getStoredStats, recordMatchOutcome, checkQuestsOnMatchEnd } from '../utils/stats';
 import { getStoredTheme } from '../utils/themes';
 import { getStoredSettings } from '../utils/settings';
 import { hapticMove, hapticWall, hapticError, hapticVictory } from '../utils/haptics';
@@ -174,6 +174,7 @@ export default function GameBoard({
   multiplayerRole = 'host',
   myColor = 'red',
   opponentName,
+  tournamentMatch,
 }) {
   const activeTheme = theme || getStoredTheme();
   const initialSeconds = (gameMinutes || 3) * 60;
@@ -475,7 +476,9 @@ export default function GameBoard({
   const triggerGameEnd = (result) => {
     setGameResult(result);
     const opponent =
-      gameMode === 'ai'
+      tournamentMatch
+        ? `${tournamentMatch.opponentName} (${tournamentMatch.opponentElo})`
+        : gameMode === 'ai'
         ? `StockBot [${aiDifficulty.toUpperCase()}]`
         : gameMode === 'friend'
         ? 'Friend (Room)'
@@ -507,6 +510,18 @@ export default function GameBoard({
         setWarningMsg(`🏆 Achievement Unlocked: ${achievement.title}!`);
       }
     );
+
+    // Track daily quests progression
+    checkQuestsOnMatchEnd({
+      isWin: result.isYouWin,
+      wallsPlaced: wallsPlacedInMatchRef.current,
+      durationSecs: durationSeconds,
+    });
+
+    // Notify tournament system if active
+    if (tournamentMatch?.onMatchFinished) {
+      tournamentMatch.onMatchFinished(result.isYouWin);
+    }
   };
 
   // Play result sound when game ends
@@ -1351,6 +1366,20 @@ export default function GameBoard({
                 <span className="text-xs text-blue-400 font-semibold">
                   {myColor === 'red' ? blueWalls : redWalls}/10 barricades
                 </span>
+              </div>
+            </div>
+          ) : tournamentMatch ? (
+            <div className="flex items-center gap-2">
+              <div className="w-3.5 h-3.5 rounded-full bg-amber-500 shadow-md shadow-amber-500/50" />
+              <div>
+                <div className="flex items-center gap-1.5">
+                  <span className="text-sm font-bold text-gray-200">{tournamentMatch.opponentName}</span>
+                  <span className="text-[10px] font-mono font-bold text-brandOrange">{tournamentMatch.opponentElo}</span>
+                  <span className="text-[9px] bg-amber-500/20 text-amber-300 border border-amber-500/40 px-1.5 py-0.2 rounded font-bold">
+                    {tournamentMatch.roundName}
+                  </span>
+                </div>
+                <span className="text-xs text-blue-400 font-semibold">{blueWalls}/10 barricades</span>
               </div>
             </div>
           ) : gameMode === 'friend' ? (

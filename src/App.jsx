@@ -27,7 +27,10 @@ import {
   Radio,
   MessageSquare,
   Award,
-  Download
+  Download,
+  Target,
+  Crown,
+  Edit3
 } from 'lucide-react';
 import GameBoard from './components/GameBoard';
 import PuzzlesView from './components/PuzzlesView';
@@ -40,7 +43,10 @@ import AnalysisBoard from './components/AnalysisBoard';
 import FriendsModal from './components/FriendsModal';
 import MessagesModal from './components/MessagesModal';
 import AchievementsModal from './components/AchievementsModal';
-import { getStoredStats } from './utils/stats';
+import TournamentModal from './components/TournamentModal';
+import QuestsModal from './components/QuestsModal';
+import ProfileEditModal from './components/ProfileEditModal';
+import { getStoredStats, getTierFromLevel, getXpForNextLevel, AVATAR_PRESETS } from './utils/stats';
 import { getStoredTheme } from './utils/themes';
 import { getStoredSettings } from './utils/settings';
 import { initHost, joinRoom } from './utils/multiplayer';
@@ -108,6 +114,12 @@ export default function App() {
   // In-App PWA Install Banner state
   const [deferredPrompt, setDeferredPrompt] = useState(null);
   const [showInstallBanner, setShowInstallBanner] = useState(false);
+
+  // Tournament, Quests & Profile Customizer state
+  const [showTournamentModal, setShowTournamentModal] = useState(false);
+  const [showQuestsModal, setShowQuestsModal] = useState(false);
+  const [showProfileEditModal, setShowProfileEditModal] = useState(false);
+  const [activeTournamentMatch, setActiveTournamentMatch] = useState(null);
 
   // Click outside to close dropdown
   useEffect(() => {
@@ -339,6 +351,12 @@ export default function App() {
     setShowJoinRoomModal(true);
   };
 
+  const handleStartTournamentMatch = (matchDetails) => {
+    setActiveTournamentMatch(matchDetails);
+    setGameMode('ai');
+    setInGame(true);
+  };
+
   const winRate =
     userStats.games > 0
       ? Math.round((userStats.wins / userStats.games) * 100)
@@ -372,6 +390,15 @@ export default function App() {
               </button>
               <button
                 type="button"
+                onClick={() => setShowQuestsModal(true)}
+                className="relative p-1.5 bg-cardDark hover:bg-borderDark/60 rounded-full border border-borderDark text-gray-300 hover:text-white transition cursor-pointer"
+                title="Daily Quests & Pass"
+              >
+                <Target size={14} className="text-brandOrange" />
+                <span className="absolute -top-0.5 -right-0.5 w-2 h-2 rounded-full bg-green-500 animate-pulse" />
+              </button>
+              <button
+                type="button"
                 onClick={() => setShowMessagesModal(true)}
                 className="relative p-1.5 bg-cardDark hover:bg-borderDark/60 rounded-full border border-borderDark text-gray-300 hover:text-white transition cursor-pointer"
                 title="Direct Messages"
@@ -379,10 +406,20 @@ export default function App() {
                 <MessageSquare size={14} className="text-brandOrange" />
                 <span className="absolute -top-0.5 -right-0.5 w-2 h-2 rounded-full bg-brandOrange animate-pulse" />
               </button>
-              <div className="flex items-center gap-1 bg-cardDark px-2 py-1 rounded-full border border-borderDark text-xs">
-                <Gem className="text-cyan-400" size={14} />
+              <div
+                onClick={() => setShowQuestsModal(true)}
+                className="flex items-center gap-1 bg-cardDark px-2 py-1 rounded-full border border-borderDark text-xs cursor-pointer hover:border-cyan-500/50 transition"
+                title="Gems"
+              >
+                <Gem className="text-cyan-400" size={13} />
+                <span className="font-mono text-cyan-300 text-[11px] font-bold">{userStats.gems || 150}</span>
               </div>
-              <div className="flex items-center gap-1.5 bg-cardDark px-2.5 py-1 rounded-full border border-borderDark text-xs font-semibold">
+              <div
+                onClick={() => setShowProfileEditModal(true)}
+                className="flex items-center gap-1.5 bg-cardDark hover:bg-borderDark px-2.5 py-1 rounded-full border border-borderDark text-xs font-semibold transition cursor-pointer"
+                title="Edit Profile"
+              >
+                <span>{userStats.flag || '🇮🇳'}</span>
                 <span className="text-gray-200">{userStats.username || 'AshuKataria'}</span>
                 <span className="text-brandOrange font-bold">{userStats.elo || 1092}</span>
               </div>
@@ -447,6 +484,10 @@ export default function App() {
                   multiplayerSession.close();
                   setMultiplayerSession(null);
                 }
+                if (activeTournamentMatch) {
+                  setActiveTournamentMatch(null);
+                  setShowTournamentModal(true);
+                }
                 setInGame(false);
               }}
               onAnalyze={(matchData) => setAnalyzingMatch(matchData)}
@@ -455,6 +496,7 @@ export default function App() {
               multiplayerRole={multiplayerRole}
               myColor={multiplayerRole === 'host' ? 'red' : 'blue'}
               opponentName={multiplayerOpponent}
+              tournamentMatch={activeTournamentMatch}
             />
           ) : isWatchingTv ? (
             <WatchView onBack={() => setIsWatchingTv(false)} />
@@ -549,6 +591,31 @@ export default function App() {
                     </div>
                     <div className="flex items-center gap-1 bg-amber-500/10 text-amber-400 border border-amber-500/30 px-2 py-1 rounded-lg text-xs font-bold">
                       <span>Play</span>
+                      <ChevronRight size={13} />
+                    </div>
+                  </div>
+
+                  {/* 8-Player Knockout Tournament Card */}
+                  <div
+                    onClick={() => setShowTournamentModal(true)}
+                    className="bg-gradient-to-r from-amber-500/15 via-cardDark to-cardDark border border-amber-500/40 hover:border-brandOrange rounded-xl p-3 flex items-center justify-between cursor-pointer transition shadow-sm group"
+                  >
+                    <div className="flex items-center gap-2.5">
+                      <div className="w-8 h-8 rounded-lg bg-amber-500/20 border border-amber-500/40 flex items-center justify-center text-brandOrange">
+                        <Crown size={17} />
+                      </div>
+                      <div>
+                        <div className="flex items-center gap-1.5">
+                          <span className="text-xs font-bold text-amber-200">8-Player Knockout Cup</span>
+                          <span className="text-[9px] bg-amber-500/20 text-amber-300 font-bold px-1.5 py-0.2 rounded border border-amber-500/30">
+                            Bracket
+                          </span>
+                        </div>
+                        <p className="text-[10px] text-gray-400 mt-0.5">Single elimination championship tournament</p>
+                      </div>
+                    </div>
+                    <div className="flex items-center gap-1 bg-amber-500 text-black px-2.5 py-1 rounded-lg text-xs font-bold shadow-xs group-hover:bg-amber-400 transition">
+                      <span>Enter</span>
                       <ChevronRight size={13} />
                     </div>
                   </div>
@@ -680,17 +747,61 @@ export default function App() {
               )}
 
               {activeTab === 'profile' && (
-                <div className="flex flex-col gap-4">
-                  <div className="flex items-center justify-between">
-                    <div>
-                      <h2 className="text-xl font-bold">{userStats.username || 'AshuKataria'}</h2>
-                      <p className="text-[11px] text-gray-400">Joined Oct 4, 2026 · India 🇮🇳</p>
+                <div className="flex flex-col gap-3.5">
+                  {/* User Profile Header Card */}
+                  <div className="bg-cardDark border border-borderDark/60 p-4 rounded-2xl flex items-center justify-between shadow-sm">
+                    <div className="flex items-center gap-3">
+                      {/* Avatar */}
+                      <div className={`w-12 h-12 rounded-2xl ${
+                        (AVATAR_PRESETS.find((a) => a.id === userStats.avatar) || AVATAR_PRESETS[0]).bg
+                      } flex items-center justify-center text-2xl shadow-md border border-white/20`}>
+                        {(AVATAR_PRESETS.find((a) => a.id === userStats.avatar) || AVATAR_PRESETS[0]).icon}
+                      </div>
+
+                      <div>
+                        <div className="flex items-center gap-1.5">
+                          <h2 className="text-base font-bold text-white">{userStats.username || 'AshuKataria'}</h2>
+                          <span>{userStats.flag || '🇮🇳'}</span>
+                        </div>
+                        <p className="text-[11px] text-gray-400">
+                          Level {userStats.level || 1} · {getTierFromLevel(userStats.level || 1).name}
+                        </p>
+                      </div>
                     </div>
-                    <div className="text-right">
-                      <span className="text-[10px] uppercase font-bold text-brandOrange tracking-wider">
-                        {userStats.elo >= 1200 ? 'Silver' : 'Bronze'}
+
+                    <button
+                      onClick={() => setShowProfileEditModal(true)}
+                      className="flex items-center gap-1.5 bg-bgDark hover:bg-borderDark/60 border border-borderDark text-gray-300 hover:text-white px-2.5 py-1.5 rounded-xl text-xs font-semibold transition cursor-pointer"
+                    >
+                      <Edit3 size={13} />
+                      <span>Edit</span>
+                    </button>
+                  </div>
+
+                  {/* Level & XP Progression Card in Profile */}
+                  <div
+                    onClick={() => setShowQuestsModal(true)}
+                    className="bg-bgDark/80 border border-borderDark rounded-2xl p-3 flex flex-col gap-1.5 cursor-pointer hover:border-brandOrange/60 transition shadow-inner"
+                  >
+                    <div className="flex items-center justify-between text-xs">
+                      <div className="flex items-center gap-1.5 font-bold text-gray-200">
+                        <Target size={13} className="text-brandOrange" />
+                        <span>Level {userStats.level || 1} XP Progress</span>
+                      </div>
+                      <span className="text-[10px] font-mono text-gray-400">
+                        {userStats.xp || 0} / {getXpForNextLevel(userStats.level || 1)} XP
                       </span>
-                      <div className="text-2xl font-black text-brandOrange">{userStats.elo || 1092}</div>
+                    </div>
+                    <div className="w-full bg-borderDark/60 h-2 rounded-full overflow-hidden">
+                      <div
+                        className="bg-gradient-to-r from-brandOrange to-amber-400 h-full rounded-full transition-all duration-300"
+                        style={{
+                          width: `${Math.min(
+                            100,
+                            Math.round(((userStats.xp || 0) / getXpForNextLevel(userStats.level || 1)) * 100)
+                          )}%`,
+                        }}
+                      />
                     </div>
                   </div>
 
@@ -768,6 +879,9 @@ export default function App() {
                 <div className="flex flex-col gap-2">
                   <h2 className="text-xl font-bold mb-2">More Options</h2>
                   {[
+                    { name: '8-Player Knockout Cup', icon: Crown, action: () => setShowTournamentModal(true) },
+                    { name: 'Daily Quests & Pass', icon: Target, action: () => setShowQuestsModal(true) },
+                    { name: 'Customize Profile', icon: User, action: () => setShowProfileEditModal(true) },
                     { name: 'Direct Messages', icon: MessageSquare, action: () => setShowMessagesModal(true) },
                     { name: 'Trophies & Badges', icon: Trophy, action: () => setShowAchievementsModal(true) },
                     { name: 'Friends & Challenges', icon: Users, action: () => setShowFriendsModal(true) },
@@ -1022,6 +1136,35 @@ export default function App() {
         <AchievementsModal
           isOpen={showAchievementsModal}
           onClose={() => setShowAchievementsModal(false)}
+        />
+
+        {/* 8-Player Tournament Bracket Modal */}
+        <TournamentModal
+          isOpen={showTournamentModal}
+          onClose={() => setShowTournamentModal(false)}
+          userStats={userStats}
+          onStartTournamentMatch={handleStartTournamentMatch}
+          onStatsUpdate={(s) => setUserStats(s)}
+        />
+
+        {/* Daily Quests & Pass Modal */}
+        <QuestsModal
+          isOpen={showQuestsModal}
+          onClose={() => setShowQuestsModal(false)}
+          userStats={userStats}
+          onStatsUpdate={(s) => setUserStats(s)}
+        />
+
+        {/* Profile Customizer Modal */}
+        <ProfileEditModal
+          isOpen={showProfileEditModal}
+          onClose={() => setShowProfileEditModal(false)}
+          userStats={userStats}
+          onProfileSaved={(s) => {
+            setUserStats(s);
+            setToastMsg('Profile updated! ✨');
+            setTimeout(() => setToastMsg(''), 2500);
+          }}
         />
 
         {/* Match Detail Bottom Sheet / Modal */}
