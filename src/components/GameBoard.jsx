@@ -182,6 +182,8 @@ export default function GameBoard({
   tournamentMatch,
   equippedCosmetics,
   lang = 'en',
+  startingWalls = 10,
+  incrementSeconds = 0,
 }) {
   const activeTheme = theme || getStoredTheme();
   const initialSeconds = (gameMinutes || 3) * 60;
@@ -194,8 +196,8 @@ export default function GameBoard({
   const [bluePos, setBluePos] = useState({ r: 0, c: 4 });
 
   // Walls left
-  const [redWalls, setRedWalls] = useState(10);
-  const [blueWalls, setBlueWalls] = useState(10);
+  const [redWalls, setRedWalls] = useState(startingWalls);
+  const [blueWalls, setBlueWalls] = useState(startingWalls);
 
   // Placed walls
   const [walls, setWalls] = useState([]);
@@ -243,8 +245,8 @@ export default function GameBoard({
       redPos: { r: 8, c: 4 },
       bluePos: { r: 0, c: 4 },
       walls: [],
-      redWalls: 10,
-      blueWalls: 10,
+      redWalls: startingWalls,
+      blueWalls: startingWalls,
     },
   ]);
 
@@ -903,6 +905,9 @@ export default function GameBoard({
         },
       ]);
 
+      if (incrementSeconds > 0) {
+        setBlueTime((prev) => prev + incrementSeconds);
+      }
       setTurn('red');
       return;
     }
@@ -969,6 +974,9 @@ export default function GameBoard({
           eloDelta: -10,
         });
       } else {
+        if (incrementSeconds > 0) {
+          setBlueTime((prev) => prev + incrementSeconds);
+        }
         setTurn('red');
       }
     }
@@ -1030,6 +1038,9 @@ export default function GameBoard({
             eloDelta: +12,
           });
         } else {
+          if (incrementSeconds > 0) {
+            setRedTime((prev) => prev + incrementSeconds);
+          }
           setTurn('blue');
         }
       } else {
@@ -1058,6 +1069,9 @@ export default function GameBoard({
             eloDelta: -11,
           });
         } else {
+          if (incrementSeconds > 0) {
+            setBlueTime((prev) => prev + incrementSeconds);
+          }
           setTurn('red');
         }
       }
@@ -1139,6 +1153,14 @@ export default function GameBoard({
         orientation: activeOrientation,
         player: myColor,
       });
+    }
+
+    if (incrementSeconds > 0) {
+      if (isRed) {
+        setRedTime((prev) => prev + incrementSeconds);
+      } else {
+        setBlueTime((prev) => prev + incrementSeconds);
+      }
     }
 
     if (isRed) {

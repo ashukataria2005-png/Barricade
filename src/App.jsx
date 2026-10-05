@@ -50,6 +50,7 @@ import TournamentModal from './components/TournamentModal';
 import QuestsModal from './components/QuestsModal';
 import ProfileEditModal from './components/ProfileEditModal';
 import StoreModal from './components/StoreModal';
+import SandboxRulesModal from './components/SandboxRulesModal';
 import { getStoredStats, getTierFromLevel, getXpForNextLevel, AVATAR_PRESETS, getStoredCosmetics } from './utils/stats';
 import { getStoredTheme } from './utils/themes';
 import { getStoredSettings } from './utils/settings';
@@ -135,6 +136,42 @@ export default function App() {
   const [showTour, setShowTour] = useState(false);
   const [tourStep, setTourStep] = useState(1);
 
+  // Live Online/Offline Network Status
+  const [isOnline, setIsOnline] = useState(() => (typeof navigator !== 'undefined' ? navigator.onLine : true));
+  const [showOnlineToast, setShowOnlineToast] = useState(false);
+
+  // Custom Sandbox Rules state
+  const [showSandboxModal, setShowSandboxModal] = useState(false);
+  const [sandboxRules, setSandboxRules] = useState({
+    startingWalls: 10,
+    incrementSeconds: 0,
+  });
+
+  // Network connectivity status listener
+  useEffect(() => {
+    let timer;
+    const handleOnline = () => {
+      setIsOnline(true);
+      setShowOnlineToast(true);
+      clearTimeout(timer);
+      timer = setTimeout(() => setShowOnlineToast(false), 3000);
+    };
+
+    const handleOffline = () => {
+      setIsOnline(false);
+      setShowOnlineToast(true);
+    };
+
+    window.addEventListener('online', handleOnline);
+    window.addEventListener('offline', handleOffline);
+
+    return () => {
+      clearTimeout(timer);
+      window.removeEventListener('online', handleOnline);
+      window.removeEventListener('offline', handleOffline);
+    };
+  }, []);
+
   // Click outside to close dropdown
   useEffect(() => {
     const handleClickOutside = (e) => {
@@ -186,7 +223,14 @@ export default function App() {
   };
 
   const handleStartGame = (mode = 'ranked') => {
+    setSandboxRules({ startingWalls: 10, incrementSeconds: 0 });
     setGameMode(mode);
+    setInGame(true);
+  };
+
+  const handleStartCustomGame = ({ startingWalls, incrementSeconds, gameMode: selectedMode }) => {
+    setSandboxRules({ startingWalls, incrementSeconds });
+    setGameMode(selectedMode || 'local');
     setInGame(true);
   };
 
@@ -404,6 +448,23 @@ export default function App() {
   return (
     <div className="min-h-screen bg-bgDark text-white flex justify-center">
       <div className="w-full max-w-md bg-bgDark min-h-screen flex flex-col justify-between pb-20 relative select-none">
+        {/* Live Network Online/Offline Reconnect Toast */}
+        {(!isOnline || showOnlineToast) && (
+          <div className="fixed top-3 left-1/2 -translate-x-1/2 z-50 pointer-events-none transition-all duration-300">
+            {!isOnline ? (
+              <div className="px-3.5 py-1.5 rounded-full bg-amber-500/20 border border-amber-500/50 text-amber-200 text-xs font-semibold shadow-lg shadow-black/60 backdrop-blur-md flex items-center gap-2">
+                <span className="w-2 h-2 rounded-full bg-amber-400 animate-ping" />
+                <span>⚠️ You are offline. Local & AI modes still work!</span>
+              </div>
+            ) : (
+              <div className="px-3.5 py-1.5 rounded-full bg-emerald-500/20 border border-emerald-500/50 text-emerald-200 text-xs font-semibold shadow-lg shadow-black/60 backdrop-blur-md flex items-center gap-2">
+                <span className="w-2 h-2 rounded-full bg-emerald-400" />
+                <span>🟢 Back online! Syncing ratings...</span>
+              </div>
+            )}
+          </div>
+        )}
+
         {/* Toast Notification */}
         {toastMsg && (
           <div className="fixed top-4 left-1/2 -translate-x-1/2 bg-amber-500 text-black font-bold text-xs px-4 py-2 rounded-xl shadow-2xl z-50 animate-bounce">
@@ -527,6 +588,7 @@ export default function App() {
                   setActiveTournamentMatch(null);
                   setShowTournamentModal(true);
                 }
+                setSandboxRules({ startingWalls: 10, incrementSeconds: 0 });
                 setInGame(false);
               }}
               onAnalyze={(matchData) => setAnalyzingMatch(matchData)}
@@ -538,6 +600,8 @@ export default function App() {
               tournamentMatch={activeTournamentMatch}
               equippedCosmetics={cosmetics?.equipped}
               lang={lang}
+              startingWalls={sandboxRules.startingWalls}
+              incrementSeconds={sandboxRules.incrementSeconds}
             />
           ) : isWatchingTv ? (
             <WatchView onBack={() => setIsWatchingTv(false)} />
@@ -662,27 +726,34 @@ export default function App() {
                   </div>
 
                   {/* Modes Grid */}
-                  <div className="grid grid-cols-3 gap-3">
+                  <div className="grid grid-cols-4 gap-2">
                     <button
                       onClick={() => setActiveTab('puzzles')}
-                      className="flex flex-col items-center justify-center bg-cardDark border border-borderDark/60 py-3 rounded-xl hover:bg-borderDark/40 transition cursor-pointer"
+                      className="flex flex-col items-center justify-center bg-cardDark border border-borderDark/60 py-2.5 rounded-xl hover:bg-borderDark/40 transition cursor-pointer"
                     >
-                      <Puzzle className="text-teal-400 mb-1" size={20} />
-                      <span className="text-xs font-medium">Puzzles</span>
+                      <Puzzle className="text-teal-400 mb-1" size={18} />
+                      <span className="text-[11px] font-medium">Puzzles</span>
                     </button>
                     <button
                       onClick={() => handleStartGame('local')}
-                      className="flex flex-col items-center justify-center bg-cardDark border border-borderDark/60 py-3 rounded-xl hover:border-brandOrange transition cursor-pointer"
+                      className="flex flex-col items-center justify-center bg-cardDark border border-borderDark/60 py-2.5 rounded-xl hover:border-brandOrange transition cursor-pointer"
                     >
-                      <Users className="text-blue-400 mb-1" size={20} />
-                      <span className="text-xs font-medium">Local</span>
+                      <Users className="text-blue-400 mb-1" size={18} />
+                      <span className="text-[11px] font-medium">Local</span>
+                    </button>
+                    <button
+                      onClick={() => setShowSandboxModal(true)}
+                      className="flex flex-col items-center justify-center bg-cardDark border border-borderDark/60 py-2.5 rounded-xl hover:border-amber-400 transition cursor-pointer group"
+                    >
+                      <Sliders className="text-amber-400 mb-1 group-hover:rotate-45 transition-transform" size={18} />
+                      <span className="text-[11px] font-medium">Sandbox</span>
                     </button>
                     <button
                       onClick={() => setIsWatchingTv(true)}
-                      className="flex flex-col items-center justify-center bg-cardDark border border-borderDark/60 py-3 rounded-xl hover:border-brandOrange transition cursor-pointer"
+                      className="flex flex-col items-center justify-center bg-cardDark border border-borderDark/60 py-2.5 rounded-xl hover:border-brandOrange transition cursor-pointer"
                     >
-                      <Tv className="text-purple-400 mb-1" size={20} />
-                      <span className="text-xs font-medium">Watch</span>
+                      <Tv className="text-purple-400 mb-1" size={18} />
+                      <span className="text-[11px] font-medium">Watch</span>
                     </button>
                   </div>
 
@@ -931,6 +1002,7 @@ export default function App() {
                     { name: t('friends_challenges', lang), icon: Users, action: () => setShowFriendsModal(true) },
                     { name: t('board_themes', lang), icon: Palette, action: () => setShowThemeModal(true) },
                     { name: t('sound_settings', lang), icon: Sliders, action: () => setShowSettingsModal(true) },
+                    { name: 'Custom Sandbox Rules 🛠️', icon: Sliders, action: () => setShowSandboxModal(true) },
                     { name: t('how_to_play', lang), icon: BookOpen, action: () => setShowHowToPlayModal(true) },
                     { name: t('barricade_tv', lang), icon: Tv, action: () => setIsWatchingTv(true) },
                     { name: t('daily_puzzles', lang), icon: Puzzle, action: () => setActiveTab('puzzles') },
@@ -1318,6 +1390,13 @@ export default function App() {
             </div>
           </div>
         )}
+
+        {/* Sandbox & Custom Rules Modal */}
+        <SandboxRulesModal
+          isOpen={showSandboxModal}
+          onClose={() => setShowSandboxModal(false)}
+          onStartCustomGame={handleStartCustomGame}
+        />
 
         {/* Match Detail Bottom Sheet / Modal */}
         {selectedProfileMatch && (
