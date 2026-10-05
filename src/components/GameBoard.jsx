@@ -169,6 +169,10 @@ export default function GameBoard({
   onStatsUpdate,
   onAnalyze,
   onOpenSettings,
+  multiplayerSession,
+  multiplayerRole = 'host',
+  myColor = 'red',
+  opponentName,
 }) {
   const activeTheme = theme || getStoredTheme();
   const initialSeconds = (gameMinutes || 3) * 60;
@@ -279,6 +283,130 @@ export default function GameBoard({
     playAudio('move');
   };
 
+  // Real-Time P2P WebRTC Multiplayer Synchronization
+  useEffect(() => {
+    if (gameMode !== 'multiplayer' || !multiplayerSession) return;
+
+    const conn = multiplayerSession.getConnection?.();
+    if (!conn) return;
+
+    const handleRemoteData = (data) => {
+      if (!data) return;
+
+      if (data.type === 'MOVE') {
+        const { r, c, player } = data;
+        if (player === 'red') {
+          setRedPos({ r, c });
+          playAudio('move');
+          const notation = `${COLS[c]}${9 - r}`;
+          setMoveHistory((prev) => [...prev, { player: 'red', type: 'pawn', notation }]);
+          setGameSnapshots((prev) => [
+            ...prev,
+            {
+              moveIdx: prev.length,
+              player: 'red',
+              type: 'pawn',
+              notation,
+              redPos: { r, c },
+              bluePos: { ...bluePos },
+              walls: [...walls],
+              redWalls,
+              blueWalls,
+            },
+          ]);
+          if (r === 0) {
+            triggerGameEnd({
+              winner: 'red',
+              reason: myColor === 'red' ? 'You reached the goal first!' : 'Opponent reached the goal first',
+              isYouWin: myColor === 'red',
+              eloDelta: myColor === 'red' ? 12 : -11,
+            });
+          } else {
+            setTurn('blue');
+          }
+        } else if (player === 'blue') {
+          setBluePos({ r, c });
+          playAudio('move');
+          const notation = `${COLS[c]}${9 - r}`;
+          setMoveHistory((prev) => [...prev, { player: 'blue', type: 'pawn', notation }]);
+          setGameSnapshots((prev) => [
+            ...prev,
+            {
+              moveIdx: prev.length,
+              player: 'blue',
+              type: 'pawn',
+              notation,
+              redPos: { ...redPos },
+              bluePos: { r, c },
+              walls: [...walls],
+              redWalls,
+              blueWalls,
+            },
+          ]);
+          if (r === 8) {
+            triggerGameEnd({
+              winner: 'blue',
+              reason: myColor === 'blue' ? 'You reached the goal first!' : 'Opponent reached the goal first',
+              isYouWin: myColor === 'blue',
+              eloDelta: myColor === 'blue' ? 12 : -11,
+            });
+          } else {
+            setTurn('red');
+          }
+        }
+      } else if (data.type === 'WALL') {
+        const { r, c, orientation, player } = data;
+        const newWall = { r, c, orientation };
+        setWalls((prev) => [...prev, newWall]);
+        if (player === 'red') setRedWalls((prev) => prev - 1);
+        else setBlueWalls((prev) => prev - 1);
+        playAudio('wall');
+        const notation = `${orientation}${COLS[c]}${8 - r}`;
+        setMoveHistory((prev) => [...prev, { player, type: 'wall', notation }]);
+        setGameSnapshots((prev) => [
+          ...prev,
+          {
+            moveIdx: prev.length,
+            player,
+            type: 'wall',
+            notation,
+            redPos: { ...redPos },
+            bluePos: { ...bluePos },
+            walls: [...walls, newWall],
+            redWalls: player === 'red' ? redWalls - 1 : redWalls,
+            blueWalls: player === 'blue' ? blueWalls - 1 : blueWalls,
+          },
+        ]);
+        setTurn(player === 'red' ? 'blue' : 'red');
+      } else if (data.type === 'CHAT') {
+        const timeStr = new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
+        setChatMessages((prev) => [...prev, { sender: 'opponent', text: data.text, time: timeStr }]);
+        setFloatingBubble({ sender: 'opponent', text: data.text });
+        setTimeout(() => setFloatingBubble((curr) => (curr?.text === data.text ? null : curr)), 3000);
+        playAudio('move');
+      } else if (data.type === 'RESIGN') {
+        triggerGameEnd({
+          winner: myColor,
+          reason: 'Opponent resigned the match',
+          isYouWin: true,
+          eloDelta: +12,
+        });
+      } else if (data.type === 'REMATCH_REQUEST') {
+        setWarningMsg('Opponent requested a rematch! Restarting match...');
+        multiplayerSession?.sendAction({ type: 'REMATCH_ACCEPT' });
+        setTimeout(() => restartGame(), 1000);
+      } else if (data.type === 'REMATCH_ACCEPT') {
+        setWarningMsg('Rematch accepted! Starting fresh match...');
+        setTimeout(() => restartGame(), 800);
+      }
+    };
+
+    conn.on('data', handleRemoteData);
+    return () => {
+      conn.off?.('data', handleRemoteData);
+    };
+  }, [gameMode, multiplayerSession, redPos, bluePos, walls, redWalls, blueWalls, myColor]);
+
   // Audio & Haptics dispatcher
   const playAudio = (type) => {
     const settings = getStoredSettings();
@@ -329,6 +457,12 @@ export default function GameBoard({
         setTimeout(() => setFloatingBubble((curr) => (curr?.text === replyText ? null : curr)), 3000);
         playAudio('move');
       }, 900);
+    } else if (gameMode === 'multiplayer') {
+      multiplayerSession?.sendAction({
+        type: 'CHAT',
+        text,
+        sender: myColor,
+      });
     }
   };
 
@@ -743,6 +877,7 @@ export default function GameBoard({
   const handleCellClick = (r, c) => {
     if (gameResult) return;
     if (gameMode === 'ai' && turn === 'blue') return;
+    if (gameMode === 'multiplayer' && turn !== myColor) return;
 
     const currentPos = turn === 'red' ? redPos : bluePos;
     const otherPos = turn === 'red' ? bluePos : redPos;
@@ -811,12 +946,22 @@ export default function GameBoard({
           setTurn('red');
         }
       }
+
+      if (gameMode === 'multiplayer') {
+        multiplayerSession?.sendAction({
+          type: 'MOVE',
+          r,
+          c,
+          player: myColor,
+        });
+      }
     }
   };
 
   const handlePlaceWall = (r, c) => {
     if (gameResult) return;
     if (gameMode === 'ai' && turn === 'blue') return;
+    if (gameMode === 'multiplayer' && turn !== myColor) return;
 
     const isRed = turn === 'red';
     const remaining = isRed ? redWalls : blueWalls;
@@ -870,6 +1015,16 @@ export default function GameBoard({
       },
     ]);
 
+    if (gameMode === 'multiplayer') {
+      multiplayerSession?.sendAction({
+        type: 'WALL',
+        r,
+        c,
+        orientation: activeOrientation,
+        player: myColor,
+      });
+    }
+
     if (isRed) {
       setRedWalls((prev) => prev - 1);
       setTurn('blue');
@@ -883,8 +1038,14 @@ export default function GameBoard({
     if (!confirmResign) {
       setConfirmResign(true);
     } else {
+      if (gameMode === 'multiplayer') {
+        multiplayerSession?.sendAction({
+          type: 'RESIGN',
+          player: myColor,
+        });
+      }
       triggerGameEnd({
-        winner: 'blue',
+        winner: myColor === 'red' ? 'blue' : 'red',
         reason: 'You resigned',
         isYouWin: false,
         eloDelta: -11,
@@ -1085,6 +1246,27 @@ export default function GameBoard({
                 )}
               </div>
             </div>
+          ) : gameMode === 'multiplayer' ? (
+            <div className="flex items-center gap-2">
+              <div
+                className={`w-3.5 h-3.5 rounded-full ${
+                  myColor === 'red' ? 'bg-blue-500 shadow-blue-500/50' : 'bg-rose-500 shadow-rose-500/50'
+                } shadow-md animate-pulse`}
+              />
+              <div>
+                <div className="flex items-center gap-1.5">
+                  <span className="text-sm font-bold text-gray-200">
+                    {opponentName || (myColor === 'red' ? 'Friend (Blue)' : 'Host (Red)')}
+                  </span>
+                  <span className="text-[9px] font-bold px-1.5 py-0.2 rounded bg-green-500/20 text-green-400 border border-green-500/40 uppercase">
+                    P2P Live
+                  </span>
+                </div>
+                <span className="text-xs text-blue-400 font-semibold">
+                  {myColor === 'red' ? blueWalls : redWalls}/10 barricades
+                </span>
+              </div>
+            </div>
           ) : gameMode === 'friend' ? (
             <div className="flex items-center gap-2">
               <div className="w-3.5 h-3.5 rounded-full bg-emerald-500 shadow-md shadow-emerald-500/50" />
@@ -1196,6 +1378,21 @@ export default function GameBoard({
         </div>
       </div>
 
+      {/* Multiplayer Live Turn Status Ribbon */}
+      {gameMode === 'multiplayer' && !gameResult && (
+        <div
+          className={`text-center py-1.5 px-3 rounded-xl text-xs font-bold my-1 transition-all ${
+            turn === myColor
+              ? 'bg-amber-500/20 text-amber-300 border border-amber-500/50 shadow-sm animate-pulse'
+              : 'bg-cardDark/90 text-gray-400 border border-borderDark/60'
+          }`}
+        >
+          {turn === myColor
+            ? '⚡ Your Turn! Move your pawn or deploy a barricade.'
+            : "⏳ Waiting for opponent's turn..."}
+        </div>
+      )}
+
       {/* Warning Notification */}
       {warningMsg && (
         <div className="text-center text-xs font-semibold text-rose-300 bg-rose-950/90 border border-rose-700/80 py-1.5 px-3 rounded-xl my-1 animate-bounce shadow-md">
@@ -1215,6 +1412,8 @@ export default function GameBoard({
               const isBlue = bluePos.r === r && bluePos.c === c;
               const isValid = validMoves.some((m) => m.r === r && m.c === c);
               const isAiTurn = gameMode === 'ai' && turn === 'blue';
+              const isMyTurn = gameMode !== 'multiplayer' || turn === myColor;
+              const isCellInteractive = isMyTurn && !isAiTurn && !gameResult;
 
               return (
                 <div
@@ -1222,9 +1421,9 @@ export default function GameBoard({
                   onClick={() => handleCellClick(r, c)}
                   style={{ backgroundColor: activeTheme.cellBg }}
                   className={`relative flex items-center justify-center rounded-lg transition-all aspect-square touch-manipulation ${
-                    isAiTurn ? 'cursor-not-allowed' : 'cursor-pointer hover:brightness-110'
+                    !isCellInteractive ? 'cursor-not-allowed' : 'cursor-pointer hover:brightness-110'
                   } ${
-                    isValid && !isAiTurn
+                    isValid && isCellInteractive
                       ? 'ring-2 ring-amber-400 ring-offset-1 ring-offset-black/50 shadow-sm'
                       : ''
                   }`}
@@ -1235,7 +1434,7 @@ export default function GameBoard({
                   {isBlue && (
                     <div className={`w-6 h-6 rounded-full border-2 shadow-lg ${activeTheme.bluePawn}`} />
                   )}
-                  {isValid && !isRed && !isBlue && !isAiTurn && (
+                  {isValid && !isRed && !isBlue && isCellInteractive && (
                     <div className="w-2.5 h-2.5 rounded-full bg-amber-400 animate-pulse" />
                   )}
                 </div>
@@ -1287,6 +1486,8 @@ export default function GameBoard({
               const leftPct = (c + 1) * (100 / 9);
               const topPct = (r + 1) * (100 / 9);
               const isAiTurn = gameMode === 'ai' && turn === 'blue';
+              const isMyTurn = gameMode !== 'multiplayer' || turn === myColor;
+              const isSensorActive = isMyTurn && !isAiTurn && !gameResult;
 
               return (
                 <div
@@ -1298,12 +1499,12 @@ export default function GameBoard({
                     transform: 'translate(-50%, -50%)',
                   }}
                   className={`absolute w-9 h-9 sm:w-11 sm:h-11 rounded-full z-30 transition-all touch-manipulation group flex items-center justify-center ${
-                    isAiTurn
+                    !isSensorActive
                       ? 'pointer-events-none cursor-not-allowed'
                       : 'pointer-events-auto cursor-pointer hover:bg-amber-400/25 active:bg-amber-400/40 active:scale-95'
                   }`}
                 >
-                  {!isAiTurn && (
+                  {isSensorActive && (
                     <div className="w-1.5 h-1.5 rounded-full bg-amber-400/0 group-hover:bg-amber-400/80 transition-all" />
                   )}
                 </div>
@@ -1313,37 +1514,43 @@ export default function GameBoard({
         </div>
       </div>
 
-      {/* ───────────────── BOTTOM BAR (You Red) ───────────────── */}
+      {/* ───────────────── BOTTOM BAR (You) ───────────────── */}
       <div
         className={`p-3 rounded-2xl border transition-all duration-200 ${
-          turn === 'red'
-            ? 'bg-rose-950/30 border-rose-500/70 shadow-lg shadow-rose-950/40'
+          turn === myColor
+            ? myColor === 'blue'
+              ? 'bg-blue-950/30 border-blue-500/70 shadow-lg shadow-blue-950/40'
+              : 'bg-rose-950/30 border-rose-500/70 shadow-lg shadow-rose-950/40'
             : 'bg-cardDark/80 border-borderDark/40'
         }`}
       >
         <div className="flex items-center gap-2 mb-2.5">
           <button
             type="button"
-            onClick={() => setRedOrientation('h')}
-            disabled={turn !== 'red'}
+            onClick={() => (myColor === 'blue' ? setBlueOrientation('h') : setRedOrientation('h'))}
+            disabled={turn !== myColor}
             className={`flex-1 py-1.5 rounded-xl border text-[11px] font-bold flex items-center justify-center gap-1.5 transition ${
-              redOrientation === 'h'
-                ? 'bg-rose-500 text-white border-rose-400 shadow-sm'
+              (myColor === 'blue' ? blueOrientation : redOrientation) === 'h'
+                ? myColor === 'blue'
+                  ? 'bg-blue-500 text-white border-blue-400 shadow-sm'
+                  : 'bg-rose-500 text-white border-rose-400 shadow-sm'
                 : 'bg-bgDark/60 border-borderDark/60 text-gray-400 hover:text-gray-200'
-            } ${turn !== 'red' ? 'opacity-40 cursor-not-allowed' : 'cursor-pointer'}`}
+            } ${turn !== myColor ? 'opacity-40 cursor-not-allowed' : 'cursor-pointer'}`}
           >
             <Shield size={12} />
             <span>Horizontal Wall</span>
           </button>
           <button
             type="button"
-            onClick={() => setRedOrientation('v')}
-            disabled={turn !== 'red'}
+            onClick={() => (myColor === 'blue' ? setBlueOrientation('v') : setRedOrientation('v'))}
+            disabled={turn !== myColor}
             className={`flex-1 py-1.5 rounded-xl border text-[11px] font-bold flex items-center justify-center gap-1.5 transition ${
-              redOrientation === 'v'
-                ? 'bg-rose-500 text-white border-rose-400 shadow-sm'
+              (myColor === 'blue' ? blueOrientation : redOrientation) === 'v'
+                ? myColor === 'blue'
+                  ? 'bg-blue-500 text-white border-blue-400 shadow-sm'
+                  : 'bg-rose-500 text-white border-rose-400 shadow-sm'
                 : 'bg-bgDark/60 border-borderDark/60 text-gray-400 hover:text-gray-200'
-            } ${turn !== 'red' ? 'opacity-40 cursor-not-allowed' : 'cursor-pointer'}`}
+            } ${turn !== myColor ? 'opacity-40 cursor-not-allowed' : 'cursor-pointer'}`}
           >
             <Shield className="rotate-90" size={12} />
             <span>Vertical Wall</span>
@@ -1352,20 +1559,32 @@ export default function GameBoard({
 
         <div className="flex items-center justify-between">
           <div className="flex items-center gap-2">
-            <div className="w-3.5 h-3.5 rounded-full bg-rose-500 shadow-md shadow-rose-500/50" />
+            <div
+              className={`w-3.5 h-3.5 rounded-full ${
+                myColor === 'blue' ? 'bg-blue-500 shadow-blue-500/50' : 'bg-rose-500 shadow-rose-500/50'
+              } shadow-md`}
+            />
             <span className="text-sm font-bold text-gray-200">
-              {userStats.username || 'AshuKataria'} ({userStats.elo || 1092}) 🇮🇳
+              {userStats.username || 'You'} ({myColor === 'blue' ? 'Blue' : 'Red'})
             </span>
-            <span className="text-xs text-rose-400 font-semibold">{redWalls}/10</span>
+            <span
+              className={`text-xs font-semibold ${
+                myColor === 'blue' ? 'text-blue-400' : 'text-rose-400'
+              }`}
+            >
+              {myColor === 'blue' ? blueWalls : redWalls}/10
+            </span>
           </div>
           <div
             className={`px-2.5 py-1 rounded-lg text-xs font-mono font-bold transition-all ${
-              turn === 'red'
-                ? 'bg-rose-600 text-white animate-pulse shadow-md shadow-rose-600/30'
+              turn === myColor
+                ? myColor === 'blue'
+                  ? 'bg-blue-600 text-white animate-pulse shadow-md shadow-blue-600/30'
+                  : 'bg-rose-600 text-white animate-pulse shadow-md shadow-rose-600/30'
                 : 'bg-bgDark text-gray-400'
             }`}
           >
-            {formatClock(redTime)}
+            {formatClock(myColor === 'blue' ? blueTime : redTime)}
           </div>
         </div>
 
@@ -1426,10 +1645,23 @@ export default function GameBoard({
 
             <button
               type="button"
-              onClick={restartGame}
+              onClick={() => {
+                if (gameMode === 'multiplayer') {
+                  multiplayerSession?.sendAction({ type: 'REMATCH_REQUEST' });
+                  setWarningMsg('Rematch request sent! Waiting for opponent...');
+                } else {
+                  restartGame();
+                }
+              }}
               className="w-full bg-[#22c55e] hover:bg-green-600 active:scale-[0.98] text-white font-bold py-3.5 rounded-2xl text-sm transition shadow-lg shadow-green-500/20 cursor-pointer mb-3"
             >
-              {gameResult.isYouWin ? 'Rematch' : gameMode === 'ai' ? 'Play Again' : 'New ranked game'}
+              {gameMode === 'multiplayer'
+                ? 'Request Rematch'
+                : gameResult.isYouWin
+                ? 'Rematch'
+                : gameMode === 'ai'
+                ? 'Play Again'
+                : 'New ranked game'}
             </button>
 
             <div className="grid grid-cols-2 gap-3 w-full mb-3">

@@ -22,7 +22,9 @@ import {
   Share2,
   Palette,
   BookOpen,
-  Sliders
+  Sliders,
+  Swords,
+  Radio
 } from 'lucide-react';
 import GameBoard from './components/GameBoard';
 import PuzzlesView from './components/PuzzlesView';
@@ -32,9 +34,11 @@ import ThemeModal from './components/ThemeModal';
 import HowToPlayModal from './components/HowToPlayModal';
 import SettingsModal from './components/SettingsModal';
 import AnalysisBoard from './components/AnalysisBoard';
+import FriendsModal from './components/FriendsModal';
 import { getStoredStats } from './utils/stats';
 import { getStoredTheme } from './utils/themes';
 import { getStoredSettings } from './utils/settings';
+import { initHost, joinRoom } from './utils/multiplayer';
 
 export default function App() {
   const [activeTab, setActiveTab] = useState('play');
@@ -83,6 +87,13 @@ export default function App() {
   const [roomCode, setRoomCode] = useState('');
   const [inputRoomCode, setInputRoomCode] = useState('');
   const [toastMsg, setToastMsg] = useState('');
+
+  // Real-Time P2P WebRTC Multiplayer session state
+  const [multiplayerSession, setMultiplayerSession] = useState(null);
+  const [multiplayerRole, setMultiplayerRole] = useState('host'); // 'host' | 'guest'
+  const [multiplayerStatus, setMultiplayerStatus] = useState('idle'); // 'waiting-for-player' | 'connected' | 'disconnected'
+  const [multiplayerOpponent, setMultiplayerOpponent] = useState('');
+  const [showFriendsModal, setShowFriendsModal] = useState(false);
 
   // Click outside to close dropdown
   useEffect(() => {
@@ -139,10 +150,43 @@ export default function App() {
     setInGame(true);
   };
 
-  const handleOpenCreateRoom = () => {
-    const generated = 'BAR-' + Math.floor(1000 + Math.random() * 9000);
+  const handleOpenCreateRoom = (customCode) => {
+    const generated = customCode || ('BAR-' + Math.floor(1000 + Math.random() * 9000));
     setRoomCode(generated);
     setShowCreateRoomModal(true);
+    setMultiplayerStatus('waiting-for-player');
+
+    if (multiplayerSession) {
+      multiplayerSession.close();
+    }
+
+    const session = initHost({
+      roomCode: generated,
+      onConnect: () => {
+        setToastMsg('Friend connected! Launching match...');
+        setMultiplayerRole('host');
+        setMultiplayerOpponent('Friend (Blue)');
+        setGameMode('multiplayer');
+        setTimeout(() => {
+          setShowCreateRoomModal(false);
+          setInGame(true);
+        }, 800);
+      },
+      onStatus: (status) => setMultiplayerStatus(status),
+      onError: (err) => {
+        console.error('Host peer error:', err);
+      },
+    });
+    setMultiplayerSession(session);
+  };
+
+  const handleCloseCreateRoom = () => {
+    if (multiplayerSession) {
+      multiplayerSession.close();
+      setMultiplayerSession(null);
+    }
+    setShowCreateRoomModal(false);
+    setMultiplayerStatus('idle');
   };
 
   const handleCopyCode = () => {
@@ -153,12 +197,68 @@ export default function App() {
     setTimeout(() => setToastMsg(''), 2500);
   };
 
+  const handleShareRoom = () => {
+    const text = `Play Quoridor with me on Barricade! Enter Room Code: ${roomCode}`;
+    if (typeof navigator !== 'undefined' && navigator.share) {
+      navigator
+        .share({
+          title: 'Barricade Match Invite',
+          text,
+        })
+        .catch(() => {});
+    } else {
+      handleCopyCode();
+    }
+  };
+
   const handleJoinSubmit = (e) => {
     e.preventDefault();
-    if (inputRoomCode.trim().length >= 4) {
-      setShowJoinRoomModal(false);
-      handleStartGame('friend');
+    const code = inputRoomCode.trim().toUpperCase();
+    if (code.length < 4) return;
+
+    setToastMsg('Connecting to room...');
+    setMultiplayerStatus('connecting');
+
+    if (multiplayerSession) {
+      multiplayerSession.close();
     }
+
+    const session = joinRoom({
+      roomCode: code,
+      onConnect: () => {
+        setToastMsg('Connected to host! Starting match...');
+        setMultiplayerRole('guest');
+        setMultiplayerOpponent('Host (Red)');
+        setGameMode('multiplayer');
+        setTimeout(() => {
+          setShowJoinRoomModal(false);
+          setInGame(true);
+        }, 800);
+      },
+      onStatus: (status) => setMultiplayerStatus(status),
+      onError: () => {
+        setToastMsg('Could not find room. Check code!');
+        setTimeout(() => setToastMsg(''), 3000);
+        setMultiplayerStatus('idle');
+      },
+    });
+    setMultiplayerSession(session);
+  };
+
+  const handleCloseJoinRoom = () => {
+    if (multiplayerSession) {
+      multiplayerSession.close();
+      setMultiplayerSession(null);
+    }
+    setShowJoinRoomModal(false);
+    setMultiplayerStatus('idle');
+  };
+
+  const handleChallengeFriend = (friend) => {
+    setShowFriendsModal(false);
+    handleOpenCreateRoom();
+    setToastMsg(`Challenged ${friend.username}! Waiting for connection...`);
+    setTimeout(() => setToastMsg(''), 3500);
   };
 
   const winRate =
@@ -226,9 +326,19 @@ export default function App() {
               gameMode={gameMode}
               theme={currentTheme}
               onStatsUpdate={(updated) => setUserStats(updated)}
-              onBack={() => setInGame(false)}
+              onBack={() => {
+                if (multiplayerSession) {
+                  multiplayerSession.close();
+                  setMultiplayerSession(null);
+                }
+                setInGame(false);
+              }}
               onAnalyze={(matchData) => setAnalyzingMatch(matchData)}
               onOpenSettings={() => setShowSettingsModal(true)}
+              multiplayerSession={multiplayerSession}
+              multiplayerRole={multiplayerRole}
+              myColor={multiplayerRole === 'host' ? 'red' : 'blue'}
+              opponentName={multiplayerOpponent}
             />
           ) : isWatchingTv ? (
             <WatchView onBack={() => setIsWatchingTv(false)} />
@@ -301,7 +411,7 @@ export default function App() {
                       <span className="text-sm font-medium">vs Computer</span>
                     </button>
                     <button
-                      onClick={handleOpenCreateRoom}
+                      onClick={() => setShowFriendsModal(true)}
                       className="flex items-center justify-center gap-2 bg-cardDark border border-borderDark/60 py-3 rounded-xl hover:bg-borderDark/40 transition cursor-pointer"
                     >
                       <Users className="text-gray-300" size={16} />
@@ -390,13 +500,22 @@ export default function App() {
                       </button>
                     </div>
 
-                    <button
-                      onClick={handleOpenCreateRoom}
-                      className="w-full flex items-center justify-center gap-1.5 border border-borderDark bg-cardDark/50 hover:bg-cardDark py-2.5 rounded-xl text-xs font-semibold text-gray-200 transition mt-1 cursor-pointer"
-                    >
-                      <Plus size={14} />
-                      <span>Create Room</span>
-                    </button>
+                    <div className="flex gap-2 mt-1">
+                      <button
+                        onClick={() => setShowFriendsModal(true)}
+                        className="flex-1 flex items-center justify-center gap-1.5 border border-brandOrange/40 bg-brandOrange/10 hover:bg-brandOrange/20 py-2.5 rounded-xl text-xs font-semibold text-brandOrange transition cursor-pointer"
+                      >
+                        <Users size={14} />
+                        <span>Friends</span>
+                      </button>
+                      <button
+                        onClick={handleOpenCreateRoom}
+                        className="flex-1 flex items-center justify-center gap-1.5 border border-borderDark bg-cardDark/50 hover:bg-cardDark py-2.5 rounded-xl text-xs font-semibold text-gray-200 transition cursor-pointer"
+                      >
+                        <Plus size={14} />
+                        <span>Create Room</span>
+                      </button>
+                    </div>
                   </div>
                 </div>
               )}
@@ -511,11 +630,11 @@ export default function App() {
                 <div className="flex flex-col gap-2">
                   <h2 className="text-xl font-bold mb-2">More Options</h2>
                   {[
+                    { name: 'Friends & Challenges', icon: Users, action: () => setShowFriendsModal(true) },
                     { name: 'Board & Pawn Themes', icon: Palette, action: () => setShowThemeModal(true) },
                     { name: 'Sound & Haptic Settings', icon: Sliders, action: () => setShowSettingsModal(true) },
                     { name: 'How to play', icon: BookOpen, action: () => setShowHowToPlayModal(true) },
                     { name: 'Barricade TV', icon: Tv, action: () => setIsWatchingTv(true) },
-                    { name: 'Play with Friends', icon: Users, action: handleOpenCreateRoom },
                     { name: 'Daily Puzzles', icon: Puzzle, action: () => setActiveTab('puzzles') },
                   ].map((item) => (
                     <button
@@ -536,37 +655,52 @@ export default function App() {
           )}
         </main>
 
-        {/* Create Room Modal */}
+        {/* Create Room Modal (P2P Host) */}
         {showCreateRoomModal && (
           <div className="fixed inset-0 bg-black/80 backdrop-blur-sm flex items-center justify-center z-50 p-4">
-            <div className="w-full max-w-xs bg-cardDark border border-borderDark rounded-3xl p-6 flex flex-col items-center text-center shadow-2xl relative">
+            <div className="w-full max-w-xs bg-cardDark border border-borderDark rounded-3xl p-6 flex flex-col items-center text-center shadow-2xl relative select-none">
               <Users className="text-brandOrange mb-2" size={32} />
-              <h3 className="font-bold text-base text-gray-100">Invite a Friend</h3>
-              <p className="text-xs text-gray-400 mt-1 mb-4">Share this room code with your friend to play directly:</p>
+              <h3 className="font-bold text-base text-gray-100">Host Private Room</h3>
+              <p className="text-xs text-gray-400 mt-1 mb-3">Share this code with your friend to connect instantly:</p>
 
-              <div className="w-full bg-bgDark border-2 border-brandOrange/60 rounded-2xl py-3 px-4 flex items-center justify-between mb-4">
+              <div className="w-full bg-bgDark border-2 border-brandOrange/60 rounded-2xl py-3 px-4 flex items-center justify-between mb-3 shadow-inner">
                 <span className="text-xl font-mono font-black text-brandOrange tracking-widest">{roomCode}</span>
-                <button
-                  onClick={handleCopyCode}
-                  className="p-1.5 bg-cardDark hover:bg-borderDark border border-borderDark rounded-lg text-gray-300 hover:text-white transition cursor-pointer"
-                  title="Copy Code"
-                >
-                  <Copy size={16} />
-                </button>
+                <div className="flex items-center gap-1">
+                  <button
+                    onClick={handleCopyCode}
+                    className="p-1.5 bg-cardDark hover:bg-borderDark border border-borderDark rounded-lg text-gray-300 hover:text-white transition cursor-pointer"
+                    title="Copy Code"
+                  >
+                    <Copy size={16} />
+                  </button>
+                  <button
+                    onClick={handleShareRoom}
+                    className="p-1.5 bg-cardDark hover:bg-borderDark border border-borderDark rounded-lg text-gray-300 hover:text-white transition cursor-pointer"
+                    title="Share Link"
+                  >
+                    <Share2 size={16} />
+                  </button>
+                </div>
+              </div>
+
+              {/* Live WebRTC Connection Handshake Status */}
+              <div className="flex items-center gap-2 py-2 px-3 rounded-xl bg-bgDark/80 border border-borderDark/60 text-xs w-full justify-center mb-4">
+                <span className="w-2.5 h-2.5 rounded-full bg-green-500 animate-ping" />
+                <span className="text-gray-300 font-semibold text-[11px]">
+                  Listening for friend connection...
+                </span>
               </div>
 
               <div className="flex flex-col gap-2 w-full">
                 <button
-                  onClick={() => {
-                    setShowCreateRoomModal(false);
-                    handleStartGame('friend');
-                  }}
-                  className="w-full bg-brandOrange hover:bg-amber-600 text-black font-bold py-2.5 rounded-xl text-xs transition cursor-pointer"
+                  onClick={handleShareRoom}
+                  className="w-full bg-brandOrange hover:bg-amber-600 text-black font-bold py-2.5 rounded-xl text-xs transition cursor-pointer shadow-md flex items-center justify-center gap-1.5"
                 >
-                  Start Game (Host)
+                  <Share2 size={14} />
+                  <span>Share Invite Code</span>
                 </button>
                 <button
-                  onClick={() => setShowCreateRoomModal(false)}
+                  onClick={handleCloseCreateRoom}
                   className="w-full bg-cardDark border border-borderDark text-gray-400 py-2 rounded-xl text-xs hover:text-white transition cursor-pointer"
                 >
                   Cancel
@@ -576,13 +710,13 @@ export default function App() {
           </div>
         )}
 
-        {/* Join Room Modal */}
+        {/* Join Room Modal (P2P Guest) */}
         {showJoinRoomModal && (
           <div className="fixed inset-0 bg-black/80 backdrop-blur-sm flex items-center justify-center z-50 p-4">
-            <div className="w-full max-w-xs bg-cardDark border border-borderDark rounded-3xl p-6 flex flex-col items-center text-center shadow-2xl relative">
+            <div className="w-full max-w-xs bg-cardDark border border-borderDark rounded-3xl p-6 flex flex-col items-center text-center shadow-2xl relative select-none">
               <Link2 className="text-brandOrange mb-2" size={32} />
               <h3 className="font-bold text-base text-gray-100">Join Private Room</h3>
-              <p className="text-xs text-gray-400 mt-1 mb-4">Enter the 6-character room code from your host:</p>
+              <p className="text-xs text-gray-400 mt-1 mb-4">Enter the room code shared by the host:</p>
 
               <form onSubmit={handleJoinSubmit} className="w-full flex flex-col gap-3">
                 <input
@@ -597,14 +731,21 @@ export default function App() {
 
                 <button
                   type="submit"
-                  disabled={inputRoomCode.trim().length < 4}
-                  className="w-full bg-brandOrange hover:bg-amber-600 disabled:opacity-40 text-black font-bold py-2.5 rounded-xl text-xs transition cursor-pointer"
+                  disabled={inputRoomCode.trim().length < 4 || multiplayerStatus === 'connecting'}
+                  className="w-full bg-brandOrange hover:bg-amber-600 disabled:opacity-40 text-black font-bold py-2.5 rounded-xl text-xs transition cursor-pointer shadow-md flex items-center justify-center gap-1.5"
                 >
-                  Join Match
+                  {multiplayerStatus === 'connecting' ? (
+                    <>
+                      <span className="w-3.5 h-3.5 border-2 border-black border-t-transparent rounded-full animate-spin" />
+                      <span>Connecting via P2P...</span>
+                    </>
+                  ) : (
+                    <span>Join Match</span>
+                  )}
                 </button>
                 <button
                   type="button"
-                  onClick={() => setShowJoinRoomModal(false)}
+                  onClick={handleCloseJoinRoom}
                   className="w-full bg-cardDark border border-borderDark text-gray-400 py-2 rounded-xl text-xs hover:text-white transition cursor-pointer"
                 >
                   Cancel
@@ -719,6 +860,13 @@ export default function App() {
         <HowToPlayModal
           isOpen={showHowToPlayModal}
           onClose={() => setShowHowToPlayModal(false)}
+        />
+
+        {/* Friends & Real-Time Challenges Modal */}
+        <FriendsModal
+          isOpen={showFriendsModal}
+          onClose={() => setShowFriendsModal(false)}
+          onChallengeFriend={handleChallengeFriend}
         />
 
         {/* Match Detail Bottom Sheet / Modal */}
