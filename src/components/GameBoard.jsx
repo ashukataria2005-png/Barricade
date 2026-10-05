@@ -16,6 +16,7 @@ import {
   VolumeX,
   History
 } from 'lucide-react';
+import { getStoredStats, recordMatchOutcome } from '../utils/stats';
 
 // ───────────────── PROCEDURAL WEB AUDIO SYNTHESIZER ─────────────────
 let audioCtx = null;
@@ -39,7 +40,6 @@ const playMoveSound = (ctx) => {
   const osc = ctx.createOscillator();
   const gain = ctx.createGain();
 
-  // Crisp wooden click/tap pitch
   osc.type = 'triangle';
   osc.frequency.setValueAtTime(440, now);
   osc.frequency.exponentialRampToValueAtTime(120, now + 0.05);
@@ -57,7 +57,6 @@ const playMoveSound = (ctx) => {
 const playWallSound = (ctx) => {
   const now = ctx.currentTime;
 
-  // Heavy wooden thud/slam sound
   const osc = ctx.createOscillator();
   const gain = ctx.createGain();
   osc.type = 'sine';
@@ -72,7 +71,6 @@ const playWallSound = (ctx) => {
   osc.start(now);
   osc.stop(now + 0.12);
 
-  // Bandpass noise punch for tactile wooden slam
   try {
     const bufferSize = Math.floor(ctx.sampleRate * 0.045);
     const buffer = ctx.createBuffer(1, bufferSize, ctx.sampleRate);
@@ -93,14 +91,11 @@ const playWallSound = (ctx) => {
     filter.connect(noiseGain);
     noiseGain.connect(ctx.destination);
     noise.start(now);
-  } catch (e) {
-    // fallback if buffer creation fails
-  }
+  } catch (e) {}
 };
 
 const playInvalidSound = (ctx) => {
   const now = ctx.currentTime;
-  // Short dull double buzz
   [0, 0.075].forEach((delay) => {
     const osc = ctx.createOscillator();
     const gain = ctx.createGain();
@@ -120,7 +115,6 @@ const playInvalidSound = (ctx) => {
 
 const playWinSound = (ctx) => {
   const now = ctx.currentTime;
-  // Celebratory rising chime: A4 -> C#5 -> E5 -> A5
   const notes = [440, 554.37, 659.25, 880];
   notes.forEach((freq, idx) => {
     const osc = ctx.createOscillator();
@@ -141,7 +135,6 @@ const playWinSound = (ctx) => {
 
 const playLossSound = (ctx) => {
   const now = ctx.currentTime;
-  // Descending tone: A4 -> G4 -> F4 -> D4
   const notes = [440, 392, 349.23, 293.66];
   notes.forEach((freq, idx) => {
     const osc = ctx.createOscillator();
@@ -162,7 +155,7 @@ const playLossSound = (ctx) => {
 
 const COLS = ['a', 'b', 'c', 'd', 'e', 'f', 'g', 'h', 'i'];
 
-export default function GameBoard({ gameMinutes = 3, gameMode = 'ranked', onBack }) {
+export default function GameBoard({ gameMinutes = 3, gameMode = 'ranked', onBack, onStatsUpdate }) {
   const initialSeconds = (gameMinutes || 3) * 60;
 
   // Turn: 'red' | 'blue'
@@ -176,7 +169,7 @@ export default function GameBoard({ gameMinutes = 3, gameMode = 'ranked', onBack
   const [redWalls, setRedWalls] = useState(10);
   const [blueWalls, setBlueWalls] = useState(10);
 
-  // Placed walls: array of { r, c, orientation: 'h' | 'v' }
+  // Placed walls
   const [walls, setWalls] = useState([]);
 
   // Orientations
@@ -187,16 +180,19 @@ export default function GameBoard({ gameMinutes = 3, gameMode = 'ranked', onBack
   const [blueTime, setBlueTime] = useState(initialSeconds);
   const [redTime, setRedTime] = useState(initialSeconds);
 
-  // Result state: { winner: 'red' | 'blue', reason: string, isYouWin: boolean, eloDelta: number }
+  // Result state
   const [gameResult, setGameResult] = useState(null);
   const [warningMsg, setWarningMsg] = useState('');
 
   // Audio mute state
   const [isMuted, setIsMuted] = useState(false);
 
-  // Move history notation state: [{ player: 'red'|'blue', type: 'pawn'|'wall', notation: string }]
+  // Move history notation state
   const [moveHistory, setMoveHistory] = useState([]);
   const notationScrollRef = useRef(null);
+
+  // Persistent User stats
+  const [userStats, setUserStats] = useState(() => getStoredStats());
 
   // AI thinking state
   const [isAiThinking, setIsAiThinking] = useState(false);
@@ -216,9 +212,27 @@ export default function GameBoard({ gameMinutes = 3, gameMode = 'ranked', onBack
       else if (type === 'invalid') playInvalidSound(ctx);
       else if (type === 'win') playWinSound(ctx);
       else if (type === 'loss') playLossSound(ctx);
-    } catch (e) {
-      // Audio autoplay policy fallback
-    }
+    } catch (e) {}
+  };
+
+  // Outcome trigger helper with automatic LocalStorage update
+  const triggerGameEnd = (result) => {
+    setGameResult(result);
+    const opponent =
+      gameMode === 'ai'
+        ? 'StockBot (AI)'
+        : gameMode === 'friend'
+        ? 'Friend (Room)'
+        : 'kamal47 (1188)';
+
+    const updated = recordMatchOutcome({
+      isWin: result.isYouWin,
+      opponent,
+      eloDelta: result.eloDelta,
+      movesCount: moveHistory.length + 1,
+    });
+    setUserStats(updated);
+    if (onStatsUpdate) onStatsUpdate(updated);
   };
 
   // Play result sound when game ends
@@ -252,7 +266,7 @@ export default function GameBoard({ gameMinutes = 3, gameMode = 'ranked', onBack
       if (turn === 'red') {
         setRedTime((prev) => {
           if (prev <= 1) {
-            setGameResult({
+            triggerGameEnd({
               winner: 'blue',
               reason: 'Red player timed out',
               isYouWin: false,
@@ -265,7 +279,7 @@ export default function GameBoard({ gameMinutes = 3, gameMode = 'ranked', onBack
       } else {
         setBlueTime((prev) => {
           if (prev <= 1) {
-            setGameResult({
+            triggerGameEnd({
               winner: 'red',
               reason: gameMode === 'ai' ? 'StockBot timed out' : 'Blue player timed out',
               isYouWin: true,
@@ -327,7 +341,6 @@ export default function GameBoard({ gameMinutes = 3, gameMode = 'ranked', onBack
     return false;
   };
 
-  // BFS check: whether a path exists to targetRow
   const hasPathToGoal = (startPos, targetRow, wallList) => {
     const queue = [{ r: startPos.r, c: startPos.c }];
     const visited = new Set();
@@ -361,13 +374,11 @@ export default function GameBoard({ gameMinutes = 3, gameMode = 'ranked', onBack
     return false;
   };
 
-  // BFS Shortest Path: returns array of points [{ r, c }, ...] to targetRow
   const getShortestPath = (startPos, targetRow, wallList) => {
     const queue = [{ r: startPos.r, c: startPos.c, path: [{ r: startPos.r, c: startPos.c }] }];
     const visited = new Set();
     visited.add(`${startPos.r},${startPos.c}`);
 
-    // Direction priority: prefer moving towards targetRow
     const deltas = [
       { r: targetRow === 8 ? 1 : -1, c: 0 },
       { r: 0, c: 1 },
@@ -417,7 +428,6 @@ export default function GameBoard({ gameMinutes = 3, gameMode = 'ranked', onBack
       if (nr >= 0 && nr < 9 && nc >= 0 && nc < 9) {
         if (!isWallBetween(pos.r, pos.c, nr, nc, walls)) {
           if (nr === otherPos.r && nc === otherPos.c) {
-            // Straight jump over opponent
             const jumpR = nr + d.r;
             const jumpC = nc + d.c;
             if (
@@ -439,17 +449,15 @@ export default function GameBoard({ gameMinutes = 3, gameMode = 'ranked', onBack
     return moves;
   };
 
-  // 🤖 SMART AI DECISION ENGINE (StockBot)
+  // 🤖 SMART AI DECISION ENGINE
   const executeAiTurn = () => {
     if (gameResult) return;
 
-    // 1. Calculate current shortest paths
     const redPath = getShortestPath(redPos, 0, walls);
     const bluePath = getShortestPath(bluePos, 8, walls);
     const redDist = redPath ? redPath.length - 1 : Infinity;
     const blueDist = bluePath ? bluePath.length - 1 : Infinity;
 
-    // 2. Wall Placement Strategy:
     let bestWall = null;
     let maxGain = 0;
 
@@ -491,13 +499,11 @@ export default function GameBoard({ gameMinutes = 3, gameMode = 'ranked', onBack
       }
     }
 
-    // If an effective wall is found
     if (bestWall && maxGain > 0) {
       setWalls((prev) => [...prev, bestWall]);
       setBlueWalls((prev) => prev - 1);
       playAudio('wall');
 
-      // Add wall notation: e.g. hd5
       const notation = `${bestWall.orientation}${COLS[bestWall.c]}${8 - bestWall.r}`;
       setMoveHistory((prev) => [...prev, { player: 'blue', type: 'wall', notation }]);
 
@@ -505,10 +511,8 @@ export default function GameBoard({ gameMinutes = 3, gameMode = 'ranked', onBack
       return;
     }
 
-    // 3. Pawn Move (Failsafe or Primary Action)
     const validMoves = getValidMoves(bluePos, redPos);
     if (validMoves.length > 0) {
-      // Immediate win condition
       const directWin = validMoves.find((m) => m.r === 8);
       if (directWin) {
         setBluePos(directWin);
@@ -516,7 +520,7 @@ export default function GameBoard({ gameMinutes = 3, gameMode = 'ranked', onBack
         const notation = `${COLS[directWin.c]}${9 - directWin.r}`;
         setMoveHistory((prev) => [...prev, { player: 'blue', type: 'pawn', notation }]);
 
-        setGameResult({
+        triggerGameEnd({
           winner: 'blue',
           reason: 'StockBot reached the goal first',
           isYouWin: false,
@@ -525,7 +529,6 @@ export default function GameBoard({ gameMinutes = 3, gameMode = 'ranked', onBack
         return;
       }
 
-      // Pick move that minimizes distance to row 8
       let bestMove = validMoves[0];
       let minDistance = Infinity;
 
@@ -543,7 +546,7 @@ export default function GameBoard({ gameMinutes = 3, gameMode = 'ranked', onBack
       setMoveHistory((prev) => [...prev, { player: 'blue', type: 'pawn', notation }]);
 
       if (bestMove.r === 8) {
-        setGameResult({
+        triggerGameEnd({
           winner: 'blue',
           reason: 'StockBot reached the goal first',
           isYouWin: false,
@@ -555,7 +558,6 @@ export default function GameBoard({ gameMinutes = 3, gameMode = 'ranked', onBack
     }
   };
 
-  // AI Hook: Triggers automatically on Blue's turn in 'ai' mode with a 600ms natural delay
   useEffect(() => {
     if (gameMode !== 'ai' || turn !== 'blue' || gameResult) {
       setIsAiThinking(false);
@@ -573,7 +575,6 @@ export default function GameBoard({ gameMinutes = 3, gameMode = 'ranked', onBack
 
   const handleCellClick = (r, c) => {
     if (gameResult) return;
-    // Disable board interaction during AI's turn
     if (gameMode === 'ai' && turn === 'blue') return;
 
     const currentPos = turn === 'red' ? redPos : bluePos;
@@ -588,7 +589,7 @@ export default function GameBoard({ gameMinutes = 3, gameMode = 'ranked', onBack
       if (turn === 'red') {
         setRedPos({ r, c });
         if (r === 0) {
-          setGameResult({
+          triggerGameEnd({
             winner: 'red',
             reason: gameMode === 'ai' ? 'You defeated StockBot!' : 'You reached the goal first',
             isYouWin: true,
@@ -600,7 +601,7 @@ export default function GameBoard({ gameMinutes = 3, gameMode = 'ranked', onBack
       } else {
         setBluePos({ r, c });
         if (r === 8) {
-          setGameResult({
+          triggerGameEnd({
             winner: 'blue',
             reason: 'Player 2 reached the goal first',
             isYouWin: false,
@@ -615,7 +616,6 @@ export default function GameBoard({ gameMinutes = 3, gameMode = 'ranked', onBack
 
   const handlePlaceWall = (r, c) => {
     if (gameResult) return;
-    // Disable wall placement during AI's turn
     if (gameMode === 'ai' && turn === 'blue') return;
 
     const isRed = turn === 'red';
@@ -664,12 +664,11 @@ export default function GameBoard({ gameMinutes = 3, gameMode = 'ranked', onBack
     }
   };
 
-  // Resign action with safety confirmation
   const handleResignClick = () => {
     if (!confirmResign) {
       setConfirmResign(true);
     } else {
-      setGameResult({
+      triggerGameEnd({
         winner: 'blue',
         reason: 'You resigned',
         isYouWin: false,
@@ -679,7 +678,6 @@ export default function GameBoard({ gameMinutes = 3, gameMode = 'ranked', onBack
     }
   };
 
-  // Back action with safety confirmation
   const handleBackClick = () => {
     if (!confirmBack) {
       setConfirmBack(true);
@@ -710,7 +708,6 @@ export default function GameBoard({ gameMinutes = 3, gameMode = 'ranked', onBack
   const otherPos = turn === 'red' ? bluePos : redPos;
   const validMoves = getValidMoves(currentPos, otherPos);
 
-  // Group moves into turn rounds (1. Red Blue  2. Red Blue)
   const rounds = [];
   for (let i = 0; i < moveHistory.length; i += 2) {
     rounds.push({
@@ -722,7 +719,7 @@ export default function GameBoard({ gameMinutes = 3, gameMode = 'ranked', onBack
 
   return (
     <div className="flex flex-col h-full select-none max-w-md mx-auto justify-between py-1 relative">
-      {/* ───────────────── TOP BAR (Opponent Blue / StockBot) ───────────────── */}
+      {/* ───────────────── TOP BAR (Opponent Blue / StockBot / Room) ───────────────── */}
       <div
         className={`p-3 rounded-2xl border transition-all duration-200 ${
           turn === 'blue'
@@ -732,7 +729,6 @@ export default function GameBoard({ gameMinutes = 3, gameMode = 'ranked', onBack
       >
         <div className="flex items-center justify-between">
           <div className="flex items-center gap-1.5">
-            {/* Safe Back Button */}
             <button
               type="button"
               onClick={handleBackClick}
@@ -746,7 +742,6 @@ export default function GameBoard({ gameMinutes = 3, gameMode = 'ranked', onBack
               {confirmBack ? 'Exit?' : <ArrowLeft size={18} />}
             </button>
 
-            {/* Safe Resign Button */}
             <button
               type="button"
               onClick={handleResignClick}
@@ -760,7 +755,6 @@ export default function GameBoard({ gameMinutes = 3, gameMode = 'ranked', onBack
               <span>{confirmResign ? 'Confirm?' : 'Resign'}</span>
             </button>
 
-            {/* Mute/Unmute Audio Toggle */}
             <button
               type="button"
               onClick={() => setIsMuted((prev) => !prev)}
@@ -775,7 +769,6 @@ export default function GameBoard({ gameMinutes = 3, gameMode = 'ranked', onBack
             </button>
           </div>
 
-          {/* Opponent Profile: StockBot (AI) vs Kamal / Local */}
           {gameMode === 'ai' ? (
             <div className="flex items-center gap-2">
               <div className="w-7 h-7 rounded-full bg-cyan-950/80 border border-cyan-500/60 flex items-center justify-center text-cyan-400 shadow-md shadow-cyan-500/20">
@@ -795,6 +788,12 @@ export default function GameBoard({ gameMinutes = 3, gameMode = 'ranked', onBack
                   <span className="text-[11px] text-blue-400 font-semibold">{blueWalls}/10 barricades</span>
                 )}
               </div>
+            </div>
+          ) : gameMode === 'friend' ? (
+            <div className="flex items-center gap-2">
+              <div className="w-3.5 h-3.5 rounded-full bg-emerald-500 shadow-md shadow-emerald-500/50" />
+              <span className="text-sm font-bold text-gray-200">Friend (Room)</span>
+              <span className="text-xs text-blue-400 font-semibold">{blueWalls}/10</span>
             </div>
           ) : (
             <div className="flex items-center gap-2">
@@ -817,7 +816,6 @@ export default function GameBoard({ gameMinutes = 3, gameMode = 'ranked', onBack
           </div>
         </div>
 
-        {/* Blue Wall Controls (Only shown for human opponents) */}
         {gameMode === 'ai' ? (
           <div className="flex items-center justify-between bg-bgDark/60 border border-borderDark/60 rounded-xl px-3 py-1.5 mt-2.5 text-[11px] text-gray-300">
             <span className="flex items-center gap-1.5 text-cyan-400 font-medium">
@@ -884,7 +882,6 @@ export default function GameBoard({ gameMinutes = 3, gameMode = 'ranked', onBack
                   className={`font-bold ${
                     round.red?.type === 'wall' ? 'text-amber-400' : 'text-rose-400'
                   }`}
-                  title={`${round.red?.type === 'wall' ? 'Wall' : 'Move'}: ${round.red?.notation}`}
                 >
                   {round.red?.notation}
                 </span>
@@ -893,7 +890,6 @@ export default function GameBoard({ gameMinutes = 3, gameMode = 'ranked', onBack
                     className={`font-bold ml-1 ${
                       round.blue?.type === 'wall' ? 'text-amber-400' : 'text-blue-400'
                     }`}
-                    title={`${round.blue?.type === 'wall' ? 'Wall' : 'Move'}: ${round.blue?.notation}`}
                   >
                     {round.blue?.notation}
                   </span>
@@ -913,7 +909,6 @@ export default function GameBoard({ gameMinutes = 3, gameMode = 'ranked', onBack
 
       {/* ───────────────── 9x9 BOARD ───────────────── */}
       <div className="relative bg-[#161618] p-3 rounded-2xl border border-borderDark/80 my-auto shadow-2xl overflow-hidden aspect-square flex items-center justify-center">
-        {/* Cells Grid */}
         <div className="grid grid-cols-9 grid-rows-9 gap-1.5 sm:gap-2 w-full h-full">
           {Array.from({ length: 9 }).map((_, r) =>
             Array.from({ length: 9 }).map((_, c) => {
@@ -949,7 +944,7 @@ export default function GameBoard({ gameMinutes = 3, gameMode = 'ranked', onBack
           )}
         </div>
 
-        {/* Continuous Solid Wooden Barricades */}
+        {/* Barricades */}
         <div className="absolute inset-3 pointer-events-none">
           {walls.map((w, idx) => {
             const leftPct = (w.c + 1) * (100 / 9);
@@ -985,7 +980,7 @@ export default function GameBoard({ gameMinutes = 3, gameMode = 'ranked', onBack
           })}
         </div>
 
-        {/* Invisible Placement Touch/Click Sensors (8x8 Intersection Grid) */}
+        {/* Intersection Sensors */}
         <div className="absolute inset-3 pointer-events-none">
           {Array.from({ length: 8 }).map((_, r) =>
             Array.from({ length: 8 }).map((_, c) => {
@@ -1026,7 +1021,6 @@ export default function GameBoard({ gameMinutes = 3, gameMode = 'ranked', onBack
             : 'bg-cardDark/80 border-borderDark/40'
         }`}
       >
-        {/* Red Wall Controls */}
         <div className="flex items-center gap-2 mb-2.5">
           <button
             type="button"
@@ -1059,7 +1053,9 @@ export default function GameBoard({ gameMinutes = 3, gameMode = 'ranked', onBack
         <div className="flex items-center justify-between">
           <div className="flex items-center gap-2">
             <div className="w-3.5 h-3.5 rounded-full bg-rose-500 shadow-md shadow-rose-500/50" />
-            <span className="text-sm font-bold text-gray-200">AshuKataria (1092) 🇮🇳</span>
+            <span className="text-sm font-bold text-gray-200">
+              {userStats.username || 'AshuKataria'} ({userStats.elo || 1092}) 🇮🇳
+            </span>
             <span className="text-xs text-rose-400 font-semibold">{redWalls}/10</span>
           </div>
           <div
@@ -1074,11 +1070,10 @@ export default function GameBoard({ gameMinutes = 3, gameMode = 'ranked', onBack
         </div>
       </div>
 
-      {/* ───────────────── SCREENSHOT-MATCHING RESULT MODAL ───────────────── */}
+      {/* ───────────────── RESULT MODAL ───────────────── */}
       {gameResult && (
         <div className="fixed inset-0 bg-black/85 backdrop-blur-sm flex items-center justify-center z-50 p-4">
           <div className="w-full max-w-sm bg-[#1c1c1e] border border-borderDark rounded-3xl p-6 flex flex-col items-center text-center shadow-2xl relative">
-            {/* Top Share & Download Icons */}
             <div className="w-full flex items-center justify-between text-gray-400 mb-2">
               <button type="button" className="p-1 hover:text-white transition cursor-pointer">
                 <Download size={20} />
@@ -1088,13 +1083,11 @@ export default function GameBoard({ gameMinutes = 3, gameMode = 'ranked', onBack
               </button>
             </div>
 
-            {/* Outcome Title */}
             <h2 className="text-2xl font-black tracking-wide text-white">
               {gameResult.isYouWin ? 'You won' : 'You lost'}
             </h2>
             <p className="text-xs text-gray-400 mt-1 mb-4 font-medium">{gameResult.reason}</p>
 
-            {/* Elo Change Badge */}
             <div
               className={`text-xl font-black ${
                 gameResult.eloDelta > 0 ? 'text-green-400' : 'text-rose-500'
@@ -1103,10 +1096,11 @@ export default function GameBoard({ gameMinutes = 3, gameMode = 'ranked', onBack
               {gameResult.eloDelta > 0 ? `+${gameResult.eloDelta}` : gameResult.eloDelta} Elo
             </div>
             <div className="text-[11px] text-gray-400 font-mono mt-0.5 mb-4">
-              {gameResult.eloDelta > 0 ? '1081 → 1093' : '1092 → 1081'}
+              {gameResult.isYouWin
+                ? `${userStats.elo - gameResult.eloDelta} → ${userStats.elo}`
+                : `${userStats.elo + Math.abs(gameResult.eloDelta)} → ${userStats.elo}`}
             </div>
 
-            {/* Set Indicators */}
             <div className="flex items-center gap-2 mb-2 text-xs font-bold text-gray-400">
               <span className="text-[10px] tracking-widest text-gray-500">SET</span>
               <div className="w-5 h-5 rounded-full bg-rose-500/20 border border-rose-500 flex items-center justify-center text-rose-400 text-xs">
@@ -1123,7 +1117,6 @@ export default function GameBoard({ gameMinutes = 3, gameMode = 'ranked', onBack
                 : 'Set complete — match ended.'}
             </p>
 
-            {/* Primary Action Button (Green) */}
             <button
               type="button"
               onClick={restartGame}
@@ -1132,7 +1125,6 @@ export default function GameBoard({ gameMinutes = 3, gameMode = 'ranked', onBack
               {gameResult.isYouWin ? 'Rematch' : gameMode === 'ai' ? 'Play Again' : 'New ranked game'}
             </button>
 
-            {/* Sub Action Buttons (Analyze & Back to Lobby) */}
             <div className="grid grid-cols-2 gap-3 w-full mb-3">
               <button
                 type="button"
@@ -1150,7 +1142,6 @@ export default function GameBoard({ gameMinutes = 3, gameMode = 'ranked', onBack
               </button>
             </div>
 
-            {/* Chat Pill */}
             <button
               type="button"
               className="w-full flex items-center justify-center gap-2 bg-[#2c2c2e]/60 hover:bg-[#2c2c2e] text-gray-300 font-semibold py-2.5 rounded-xl text-xs transition mb-4 cursor-pointer"
@@ -1159,7 +1150,6 @@ export default function GameBoard({ gameMinutes = 3, gameMode = 'ranked', onBack
               <span>Chat</span>
             </button>
 
-            {/* Barricade Premium Card */}
             <div className="w-full bg-[#16202a] border border-cyan-900/50 hover:border-cyan-500/50 transition rounded-xl p-3 flex items-center justify-between cursor-pointer">
               <div className="flex items-center gap-2.5">
                 <Gem className="text-cyan-400" size={16} />
