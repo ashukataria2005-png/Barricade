@@ -52,6 +52,7 @@ import QuestsModal from './components/QuestsModal';
 import ProfileEditModal from './components/ProfileEditModal';
 import StoreModal from './components/StoreModal';
 import SandboxRulesModal from './components/SandboxRulesModal';
+import BrandLogo from './components/BrandLogo';
 import { getStoredStats, getTierFromLevel, getXpForNextLevel, AVATAR_PRESETS, getStoredCosmetics } from './utils/stats';
 import { getStoredTheme } from './utils/themes';
 import { getStoredSettings } from './utils/settings';
@@ -493,13 +494,16 @@ export default function App() {
         {/* Top Header */}
         {!inGame && !isWatchingTv && !inKingOfTheHill && !analyzingMatch && (
           <header className="flex items-center justify-between px-3 sm:px-4 py-2.5 sm:py-3 bg-bgDark border-b border-borderDark/40">
-            <h1
+            <div
               onClick={handleLogoClick}
-              className="text-xl sm:text-2xl font-black text-brandOrange tracking-wide cursor-pointer hover:brightness-110 active:scale-95 transition select-none flex items-center gap-1.5"
+              className="flex items-center gap-2 cursor-pointer group select-none active:scale-95 transition"
               title="Barricade Home"
             >
-              Barricade
-            </h1>
+              <BrandLogo size={28} />
+              <h1 className="text-xl sm:text-2xl font-black text-brandOrange tracking-wide group-hover:brightness-110 transition">
+                Barricade
+              </h1>
+            </div>
             <div className="flex items-center gap-2">
               {/* Unified Store & Currency Pill (Gems & Coins) */}
               <div
@@ -521,12 +525,12 @@ export default function App() {
               {/* Profile Avatar Chip */}
               <div
                 onClick={() => setShowProfileEditModal(true)}
-                className="flex items-center gap-1.5 bg-cardDark/90 hover:bg-borderDark/80 px-2.5 py-1 rounded-full border border-borderDark/70 text-xs font-semibold transition cursor-pointer active:scale-95"
+                className="flex items-center gap-2 bg-cardDark/90 hover:bg-borderDark/80 px-2.5 py-1 rounded-full border border-borderDark/70 text-xs font-semibold transition cursor-pointer active:scale-95"
                 title="Edit Profile"
               >
-                <span>{userStats.flag || '🇮🇳'}</span>
-                <span className="text-gray-200 hidden sm:inline max-w-[80px] truncate">{userStats.username || 'AshuKataria'}</span>
-                <span className="text-brandOrange font-bold">{userStats.elo || 1092}</span>
+                <span className="text-sm leading-none">{userStats.flag || '🇮🇳'}</span>
+                <span className="text-gray-200 font-bold max-w-[85px] sm:max-w-[110px] truncate">{userStats.username || 'AshuKataria'}</span>
+                <span className="text-brandOrange font-mono font-bold text-[11px]">{userStats.elo || 1092}</span>
               </div>
             </div>
           </header>

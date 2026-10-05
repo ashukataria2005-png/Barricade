@@ -29,6 +29,7 @@ import { checkMatchAchievements } from '../utils/achievements';
 import { t } from '../utils/i18n';
 import ChatModal from './ChatModal';
 import HowToPlayModal from './HowToPlayModal';
+import BrandLogo from './BrandLogo';
 
 // ───────────────── PROCEDURAL WEB AUDIO SYNTHESIZER ─────────────────
 let audioCtx = null;
@@ -1364,6 +1365,7 @@ export default function GameBoard({
               className="flex items-center gap-1.5 cursor-pointer group select-none"
               title="Return to Home Lobby"
             >
+              <BrandLogo size={20} />
               <span className="text-base font-black text-brandOrange tracking-wide group-hover:brightness-110 transition">
                 Barricade
               </span>
@@ -1711,14 +1713,20 @@ export default function GameBoard({
                     top: `${topPct}%`,
                     transform: 'translate(-50%, -50%)',
                   }}
-                  className={`absolute w-10 h-10 sm:w-12 sm:h-12 rounded-full z-30 transition-all touch-manipulation group flex items-center justify-center ${
+                  className={`absolute w-11 h-11 sm:w-13 sm:h-13 z-30 transition-all touch-manipulation group flex items-center justify-center ${
                     !isSensorActive
                       ? 'pointer-events-none'
-                      : 'pointer-events-auto cursor-pointer hover:bg-amber-400/30 active:bg-amber-400/50 active:scale-95'
+                      : 'pointer-events-auto cursor-pointer'
                   }`}
                 >
                   {isSensorActive && (
-                    <div className="w-2 h-2 rounded-full bg-amber-400/60 group-hover:bg-amber-400 transition-all ring-2 ring-amber-400/60 animate-pulse" />
+                    <div
+                      className={`pointer-events-none opacity-0 group-hover:opacity-100 group-active:opacity-100 transition-all duration-150 rounded-full shadow-lg ${
+                        selectedWallMode === 'h'
+                          ? 'w-10 sm:w-12 h-2 bg-gradient-to-r from-amber-500 via-amber-300 to-amber-500 border border-amber-200 ring-2 ring-amber-400/50 shadow-amber-500/40'
+                          : 'h-10 sm:h-12 w-2 bg-gradient-to-b from-amber-500 via-amber-300 to-amber-500 border border-amber-200 ring-2 ring-amber-400/50 shadow-amber-500/40'
+                      }`}
+                    />
                   )}
                 </div>
               );
