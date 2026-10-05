@@ -17,7 +17,9 @@ import {
   History,
   Undo2,
   Sliders,
-  Sparkles
+  Sparkles,
+  MoreVertical,
+  BookOpen
 } from 'lucide-react';
 import { getStoredStats, recordMatchOutcome, checkQuestsOnMatchEnd } from '../utils/stats';
 import { getStoredTheme } from '../utils/themes';
@@ -26,6 +28,7 @@ import { hapticMove, hapticWall, hapticError, hapticVictory } from '../utils/hap
 import { checkMatchAchievements } from '../utils/achievements';
 import { t } from '../utils/i18n';
 import ChatModal from './ChatModal';
+import HowToPlayModal from './HowToPlayModal';
 
 // ───────────────── PROCEDURAL WEB AUDIO SYNTHESIZER ─────────────────
 let audioCtx = null;
@@ -207,6 +210,13 @@ export default function GameBoard({
   const [blueOrientation, setBlueOrientation] = useState('h');
   const [redOrientation, setRedOrientation] = useState('h');
 
+  // Dynamic Wall Selection state: null (Default Pawn Move mode) | 'h' | 'v'
+  const [selectedWallMode, setSelectedWallMode] = useState(null);
+
+  // 3-Dot Action Menu Bottom Sheet & Rules Modal
+  const [showActionMenu, setShowActionMenu] = useState(false);
+  const [showRulesModal, setShowRulesModal] = useState(false);
+
   // Timers initialized strictly to gameMinutes
   const [blueTime, setBlueTime] = useState(initialSeconds);
   const [redTime, setRedTime] = useState(initialSeconds);
@@ -337,6 +347,7 @@ export default function GameBoard({
     setGameSnapshots((prev) =>
       prev.slice(0, gameMode === 'ai' ? Math.max(1, prev.length - 2) : Math.max(1, prev.length - 1))
     );
+    setSelectedWallMode(null);
     playAudio('move');
   };
 
@@ -999,6 +1010,8 @@ export default function GameBoard({
   }, [turn, gameMode, gameResult, walls, redPos, bluePos, blueWalls, aiDifficulty]);
 
   const handleCellClick = (r, c) => {
+    // If a wall is selected, pawn moves are disabled
+    if (selectedWallMode !== null) return;
     if (gameResult) return;
     if (gameMode === 'ai' && turn === 'blue') return;
     if (gameMode === 'multiplayer' && turn !== myColor) return;
@@ -1095,7 +1108,12 @@ export default function GameBoard({
 
     const isRed = turn === 'red';
     const remaining = isRed ? redWalls : blueWalls;
-    const activeOrientation = isRed ? redOrientation : blueOrientation;
+    const activeOrientation = selectedWallMode || (isRed ? redOrientation : blueOrientation);
+
+    if (!selectedWallMode && gameMode !== 'ai') {
+      setWarningMsg('Select a wall (Horizontal or Vertical) first!');
+      return;
+    }
 
     if (remaining <= 0) {
       setWarningMsg('No barricades remaining!');
@@ -1171,6 +1189,9 @@ export default function GameBoard({
       setBlueWalls((prev) => prev - 1);
       setTurn('red');
     }
+
+    // Auto-Reset Wall Mode back to pawn move mode for next turn
+    setSelectedWallMode(null);
   };
 
   const handleResignClick = () => {
@@ -1197,6 +1218,14 @@ export default function GameBoard({
     if (!confirmBack) {
       setConfirmBack(true);
     } else {
+      onBack();
+    }
+  };
+
+  const handleLogoClick = () => {
+    if (gameResult) {
+      onBack();
+    } else if (window.confirm('Do you want to leave the active match and return to the home lobby?')) {
       onBack();
     }
   };
@@ -1312,75 +1341,44 @@ export default function GameBoard({
 
   return (
     <div className="flex flex-col h-full select-none max-w-md mx-auto justify-between py-1 relative">
-      {/* ───────────────── TOP BAR (Opponent Blue / StockBot / Room) ───────────────── */}
-      <div
-        className={`p-3 rounded-2xl border transition-all duration-200 ${
-          turn === 'blue'
-            ? 'bg-blue-950/30 border-blue-500/70 shadow-lg shadow-blue-950/40'
-            : 'bg-cardDark/80 border-borderDark/40'
-        }`}
-      >
-        <div className="flex items-center justify-between">
-          <div className="flex items-center gap-1.5">
+      {/* ───────────────── TOP BAR (Header & Opponent Deck) ───────────────── */}
+      <div className="flex flex-col gap-1.5">
+        {/* Navigation & Quick Controls Bar */}
+        <div className="flex items-center justify-between px-1">
+          <div className="flex items-center gap-2">
             <button
               type="button"
               onClick={handleBackClick}
-              className={`p-1.5 rounded-lg border text-xs font-semibold transition cursor-pointer ${
+              className={`p-1.5 rounded-xl border text-xs font-semibold transition cursor-pointer flex items-center gap-1.5 ${
                 confirmBack
-                  ? 'bg-rose-950 text-rose-300 border-rose-700 animate-pulse'
-                  : 'hover:bg-borderDark border-transparent text-gray-400 hover:text-white'
+                  ? 'bg-rose-950 text-rose-300 border-rose-700 animate-pulse px-2.5'
+                  : 'bg-cardDark/80 hover:bg-borderDark border-borderDark/60 text-gray-400 hover:text-white'
               }`}
               title="Return to lobby"
             >
-              {confirmBack ? 'Exit?' : <ArrowLeft size={18} />}
+              <ArrowLeft size={16} />
+              {confirmBack && <span>Leave?</span>}
             </button>
-
-            <button
-              type="button"
-              onClick={handleResignClick}
-              className={`flex items-center gap-1 px-2 py-1 rounded-lg border text-xs font-semibold transition cursor-pointer ${
-                confirmResign
-                  ? 'bg-red-600 text-white border-red-500 animate-pulse shadow-md'
-                  : 'bg-cardDark hover:bg-borderDark border-borderDark text-gray-400 hover:text-gray-200'
-              }`}
+            <div
+              onClick={handleLogoClick}
+              className="flex items-center gap-1.5 cursor-pointer group select-none"
+              title="Return to Home Lobby"
             >
-              <Flag size={13} />
-              <span>{confirmResign ? t('confirm_resign', lang) : t('resign', lang)}</span>
-            </button>
+              <span className="text-base font-black text-brandOrange tracking-wide group-hover:brightness-110 transition">
+                Barricade
+              </span>
+            </div>
+          </div>
 
-            <button
-              type="button"
-              onClick={() => setIsMuted((prev) => !prev)}
-              className={`p-1.5 rounded-lg border text-xs font-semibold transition cursor-pointer ${
-                isMuted
-                  ? 'bg-cardDark text-gray-500 border-borderDark hover:text-gray-300'
-                  : 'bg-cardDark text-cyan-400 border-borderDark hover:bg-borderDark'
-              }`}
-              title={isMuted ? 'Unmute sounds' : 'Mute sounds'}
-            >
-              {isMuted ? <VolumeX size={15} /> : <Volume2 size={15} />}
-            </button>
-
-            {/* Sound & Haptic Settings Drawer */}
-            {onOpenSettings && (
-              <button
-                type="button"
-                onClick={onOpenSettings}
-                className="p-1.5 rounded-lg border text-xs font-semibold bg-cardDark text-gray-400 hover:text-white border-borderDark hover:bg-borderDark transition cursor-pointer"
-                title="Audio & Haptic Settings"
-              >
-                <Sliders size={15} />
-              </button>
-            )}
-
+          <div className="flex items-center gap-1.5">
             {/* In-Game Chat Toggle */}
             <button
               type="button"
               onClick={() => setIsChatOpen(true)}
-              className="p-1.5 rounded-lg border text-xs font-semibold bg-cardDark text-gray-400 hover:text-white border-borderDark hover:bg-borderDark transition cursor-pointer relative"
+              className="p-1.5 rounded-xl border text-xs font-semibold bg-cardDark/80 text-gray-300 hover:text-white border-borderDark/60 hover:bg-borderDark transition cursor-pointer relative"
               title="Open Chat"
             >
-              <MessageSquare size={15} />
+              <MessageSquare size={16} />
               {chatMessages.length > 0 && (
                 <span className="absolute -top-1 -right-1 w-2 h-2 rounded-full bg-brandOrange" />
               )}
@@ -1392,165 +1390,162 @@ export default function GameBoard({
                 type="button"
                 onClick={handleUndo}
                 disabled={undoStack.length === 0 || isAiThinking || !!gameResult}
-                className="p-1.5 rounded-lg border text-xs font-semibold bg-cardDark border-borderDark text-gray-300 hover:text-white hover:bg-borderDark transition disabled:opacity-30 disabled:cursor-not-allowed cursor-pointer flex items-center gap-0.5"
+                className="p-1.5 rounded-xl border text-xs font-semibold bg-cardDark/80 border-borderDark/60 text-gray-300 hover:text-white hover:bg-borderDark transition disabled:opacity-30 disabled:cursor-not-allowed cursor-pointer flex items-center gap-1"
                 title="Undo Move"
               >
-                <Undo2 size={14} />
+                <Undo2 size={15} />
               </button>
             )}
           </div>
-
-          {/* Opponent Floating Speech Bubble */}
-          {floatingBubble && floatingBubble.sender === 'opponent' && (
-            <div className="absolute top-14 left-14 z-40 bg-cardDark text-brandOrange border border-brandOrange/80 px-2.5 py-1 rounded-2xl text-xs font-bold shadow-2xl animate-bounce">
-              {floatingBubble.text}
-            </div>
-          )}
-
-          {gameMode === 'ai' ? (
-            <div className="flex items-center gap-2">
-              <div className="w-7 h-7 rounded-full bg-cyan-950/80 border border-cyan-500/60 flex items-center justify-center text-cyan-400 shadow-md shadow-cyan-500/20">
-                <Bot size={15} />
-              </div>
-              <div className="text-left">
-                <div className="flex items-center gap-1.5">
-                  <span className="text-sm font-bold text-gray-200">StockBot</span>
-                  {/* Clickable AI Difficulty Toggle */}
-                  <button
-                    type="button"
-                    onClick={() => {
-                      const next =
-                        aiDifficulty === 'easy'
-                          ? 'medium'
-                          : aiDifficulty === 'medium'
-                          ? 'hard'
-                          : 'easy';
-                      setAiDifficulty(next);
-                    }}
-                    className={`text-[9px] font-bold px-1.5 py-0.2 rounded-md border uppercase transition cursor-pointer ${
-                      aiDifficulty === 'easy'
-                        ? 'bg-emerald-950 text-emerald-300 border-emerald-700'
-                        : aiDifficulty === 'medium'
-                        ? 'bg-cyan-950 text-cyan-300 border-cyan-700'
-                        : 'bg-rose-950 text-rose-300 border-rose-700'
-                    }`}
-                    title="Toggle difficulty (Easy / Med / Hard)"
-                  >
-                    {aiDifficulty}
-                  </button>
-                </div>
-                {isAiThinking ? (
-                  <div className="flex items-center gap-1 text-[11px] text-cyan-400 font-semibold animate-pulse">
-                    <span className="w-1.5 h-1.5 rounded-full bg-cyan-400 animate-ping" />
-                    <span>StockBot is thinking...</span>
-                  </div>
-                ) : (
-                  <span className="text-[11px] text-blue-400 font-semibold">{blueWalls}/10 barricades</span>
-                )}
-              </div>
-            </div>
-          ) : gameMode === 'multiplayer' ? (
-            <div className="flex items-center gap-2">
-              <div
-                className={`w-3.5 h-3.5 rounded-full ${
-                  myColor === 'red' ? 'bg-blue-500 shadow-blue-500/50' : 'bg-rose-500 shadow-rose-500/50'
-                } shadow-md animate-pulse`}
-              />
-              <div>
-                <div className="flex items-center gap-1.5">
-                  <span className="text-sm font-bold text-gray-200">
-                    {opponentName || (myColor === 'red' ? 'Friend (Blue)' : 'Host (Red)')}
-                  </span>
-                  <span className="text-[9px] font-bold px-1.5 py-0.2 rounded bg-green-500/20 text-green-400 border border-green-500/40 uppercase">
-                    P2P Live
-                  </span>
-                </div>
-                <span className="text-xs text-blue-400 font-semibold">
-                  {myColor === 'red' ? blueWalls : redWalls}/10 barricades
-                </span>
-              </div>
-            </div>
-          ) : tournamentMatch ? (
-            <div className="flex items-center gap-2">
-              <div className="w-3.5 h-3.5 rounded-full bg-amber-500 shadow-md shadow-amber-500/50" />
-              <div>
-                <div className="flex items-center gap-1.5">
-                  <span className="text-sm font-bold text-gray-200">{tournamentMatch.opponentName}</span>
-                  <span className="text-[10px] font-mono font-bold text-brandOrange">{tournamentMatch.opponentElo}</span>
-                  <span className="text-[9px] bg-amber-500/20 text-amber-300 border border-amber-500/40 px-1.5 py-0.2 rounded font-bold">
-                    {tournamentMatch.roundName}
-                  </span>
-                </div>
-                <span className="text-xs text-blue-400 font-semibold">{blueWalls}/10 barricades</span>
-              </div>
-            </div>
-          ) : gameMode === 'friend' ? (
-            <div className="flex items-center gap-2">
-              <div className="w-3.5 h-3.5 rounded-full bg-emerald-500 shadow-md shadow-emerald-500/50" />
-              <span className="text-sm font-bold text-gray-200">Friend (Room)</span>
-              <span className="text-xs text-blue-400 font-semibold">{blueWalls}/10</span>
-            </div>
-          ) : (
-            <div className="flex items-center gap-2">
-              <div className="w-3.5 h-3.5 rounded-full bg-blue-500 shadow-md shadow-blue-500/50" />
-              <span className="text-sm font-bold text-gray-200">
-                {gameMode === 'local' ? 'Player 2 (Blue)' : 'kamal47 (1188) 🇮🇳'}
-              </span>
-              <span className="text-xs text-blue-400 font-semibold">{blueWalls}/10</span>
-            </div>
-          )}
-
-          <div
-            className={`px-2.5 py-1 rounded-lg text-xs font-mono font-bold transition-all ${
-              turn === 'blue'
-                ? 'bg-blue-600 text-white animate-pulse shadow-md shadow-blue-600/30'
-                : 'bg-bgDark text-gray-400'
-            }`}
-          >
-            {formatClock(blueTime)}
-          </div>
         </div>
 
-        {gameMode === 'ai' ? (
-          <div className="flex items-center justify-between bg-bgDark/60 border border-borderDark/60 rounded-xl px-3 py-1.5 mt-2.5 text-[11px] text-gray-300">
-            <span className="flex items-center gap-1.5 text-cyan-400 font-medium">
-              <Cpu size={13} />
-              <span>BFS Engine · {aiDifficulty.toUpperCase()}</span>
-            </span>
-            <span className="text-gray-400">
-              AI Barricades: <strong className="text-white font-mono">{blueWalls}</strong>
-            </span>
-          </div>
-        ) : (
-          <div className="flex items-center gap-2 mt-2.5">
-            <button
-              type="button"
-              onClick={() => setBlueOrientation('h')}
-              disabled={turn !== 'blue'}
-              className={`flex-1 py-1.5 rounded-xl border text-[11px] font-bold flex items-center justify-center gap-1.5 transition ${
-                blueOrientation === 'h'
-                  ? 'bg-blue-500 text-white border-blue-400 shadow-sm'
-                  : 'bg-bgDark/60 border-borderDark/60 text-gray-400 hover:text-gray-200'
-              } ${turn !== 'blue' ? 'opacity-40 cursor-not-allowed' : 'cursor-pointer'}`}
+        {/* Opponent Profile & Timer Deck Card */}
+        <div
+          className={`p-2.5 rounded-2xl border transition-all duration-200 ${
+            turn === 'blue'
+              ? 'bg-blue-950/30 border-blue-500/70 shadow-lg shadow-blue-950/40'
+              : 'bg-cardDark/90 border-borderDark/60'
+          }`}
+        >
+          <div className="flex items-center justify-between gap-2 min-w-0">
+            {/* Opponent Info */}
+            <div className="flex items-center gap-2 min-w-0 flex-1">
+              {gameMode === 'ai' ? (
+                <>
+                  <div className="w-8 h-8 rounded-full bg-cyan-950/80 border border-cyan-500/60 flex items-center justify-center text-cyan-400 shrink-0 shadow-md shadow-cyan-500/20">
+                    <Bot size={16} />
+                  </div>
+                  <div className="min-w-0 flex-1 text-left">
+                    <div className="flex items-center gap-1.5">
+                      <span className="text-xs font-bold text-gray-200 truncate">StockBot</span>
+                      <button
+                        type="button"
+                        onClick={() => {
+                          const next =
+                            aiDifficulty === 'easy'
+                              ? 'medium'
+                              : aiDifficulty === 'medium'
+                              ? 'hard'
+                              : 'easy';
+                          setAiDifficulty(next);
+                        }}
+                        className={`text-[9px] font-bold px-1.5 py-0.2 rounded-md border uppercase transition cursor-pointer shrink-0 ${
+                          aiDifficulty === 'easy'
+                            ? 'bg-emerald-950 text-emerald-300 border-emerald-700'
+                            : aiDifficulty === 'medium'
+                            ? 'bg-cyan-950 text-cyan-300 border-cyan-700'
+                            : 'bg-rose-950 text-rose-300 border-rose-700'
+                        }`}
+                        title="Toggle difficulty (Easy / Med / Hard)"
+                      >
+                        {aiDifficulty}
+                      </button>
+                    </div>
+                    {isAiThinking ? (
+                      <div className="flex items-center gap-1 text-[10px] text-cyan-400 font-semibold animate-pulse">
+                        <span className="w-1.5 h-1.5 rounded-full bg-cyan-400 animate-ping" />
+                        <span>Thinking...</span>
+                      </div>
+                    ) : (
+                      <span className="text-[10px] text-blue-400 font-semibold block">🧱 {blueWalls}/10</span>
+                    )}
+                  </div>
+                </>
+              ) : gameMode === 'multiplayer' ? (
+                <>
+                  <div
+                    className={`w-4 h-4 rounded-full shrink-0 ${
+                      myColor === 'red' ? 'bg-blue-500 shadow-blue-500/50' : 'bg-rose-500 shadow-rose-500/50'
+                    } shadow-md animate-pulse`}
+                  />
+                  <div className="min-w-0 flex-1 text-left">
+                    <div className="flex items-center gap-1.5">
+                      <span className="text-xs font-bold text-gray-200 truncate">
+                        {opponentName || (myColor === 'red' ? 'Friend (Blue)' : 'Host (Red)')}
+                      </span>
+                      <span className="text-[9px] font-bold px-1.5 py-0.2 rounded bg-green-500/20 text-green-400 border border-green-500/40 uppercase shrink-0">
+                        Live
+                      </span>
+                    </div>
+                    <span className="text-[10px] text-blue-400 font-semibold block">
+                      🧱 {myColor === 'red' ? blueWalls : redWalls}/10
+                    </span>
+                  </div>
+                </>
+              ) : tournamentMatch ? (
+                <>
+                  <div className="w-4 h-4 rounded-full bg-amber-500 shadow-md shadow-amber-500/50 shrink-0" />
+                  <div className="min-w-0 flex-1 text-left">
+                    <div className="flex items-center gap-1.5">
+                      <span className="text-xs font-bold text-gray-200 truncate">{tournamentMatch.opponentName}</span>
+                      <span className="text-[10px] font-mono font-bold text-brandOrange shrink-0">{tournamentMatch.opponentElo}</span>
+                    </div>
+                    <span className="text-[10px] text-blue-400 font-semibold block">🧱 {blueWalls}/10</span>
+                  </div>
+                </>
+              ) : (
+                <>
+                  <div className="w-4 h-4 rounded-full bg-blue-500 shadow-md shadow-blue-500/50 shrink-0" />
+                  <div className="min-w-0 flex-1 text-left">
+                    <span className="text-xs font-bold text-gray-200 truncate block">
+                      {gameMode === 'local' ? 'Player 2 (Blue)' : 'kamal47 (1188) 🇮🇳'}
+                    </span>
+                    <span className="text-[10px] text-blue-400 font-semibold block">🧱 {blueWalls}/10</span>
+                  </div>
+                </>
+              )}
+            </div>
+
+            {/* Timer */}
+            <div
+              className={`px-3 py-1 rounded-xl text-xs font-mono font-bold shrink-0 transition-all ${
+                turn === 'blue'
+                  ? 'bg-blue-600 text-white animate-pulse shadow-md shadow-blue-600/30'
+                  : 'bg-bgDark text-gray-400'
+              }`}
             >
-              <Shield size={12} />
-              <span>Horizontal Wall</span>
-            </button>
-            <button
-              type="button"
-              onClick={() => setBlueOrientation('v')}
-              disabled={turn !== 'blue'}
-              className={`flex-1 py-1.5 rounded-xl border text-[11px] font-bold flex items-center justify-center gap-1.5 transition ${
-                blueOrientation === 'v'
-                  ? 'bg-blue-500 text-white border-blue-400 shadow-sm'
-                  : 'bg-bgDark/60 border-borderDark/60 text-gray-400 hover:text-gray-200'
-              } ${turn !== 'blue' ? 'opacity-40 cursor-not-allowed' : 'cursor-pointer'}`}
-            >
-              <Shield className="rotate-90" size={12} />
-              <span>Vertical Wall</span>
-            </button>
+              {formatClock(blueTime)}
+            </div>
           </div>
-        )}
+
+          {/* Local Mode Player 2 Wall Controls */}
+          {gameMode === 'local' && (
+            <div className="flex items-center gap-2 mt-2 pt-2 border-t border-borderDark/40">
+              <button
+                type="button"
+                onClick={() => {
+                  if (turn !== 'blue') return;
+                  setSelectedWallMode((prev) => (prev === 'h' ? null : 'h'));
+                }}
+                disabled={turn !== 'blue' || blueWalls <= 0}
+                className={`flex-1 py-1.5 rounded-xl border text-[11px] font-bold flex items-center justify-center gap-1.5 transition ${
+                  selectedWallMode === 'h' && turn === 'blue'
+                    ? 'bg-blue-500 text-white border-blue-400 shadow-sm'
+                    : 'bg-bgDark/60 border-borderDark/60 text-gray-400 hover:text-gray-200'
+                } ${turn !== 'blue' || blueWalls <= 0 ? 'opacity-40 cursor-not-allowed' : 'cursor-pointer'}`}
+              >
+                <Shield size={12} />
+                <span>Horizontal Wall {selectedWallMode === 'h' && turn === 'blue' ? '(Active)' : ''}</span>
+              </button>
+              <button
+                type="button"
+                onClick={() => {
+                  if (turn !== 'blue') return;
+                  setSelectedWallMode((prev) => (prev === 'v' ? null : 'v'));
+                }}
+                disabled={turn !== 'blue' || blueWalls <= 0}
+                className={`flex-1 py-1.5 rounded-xl border text-[11px] font-bold flex items-center justify-center gap-1.5 transition ${
+                  selectedWallMode === 'v' && turn === 'blue'
+                    ? 'bg-blue-500 text-white border-blue-400 shadow-sm'
+                    : 'bg-bgDark/60 border-borderDark/60 text-gray-400 hover:text-gray-200'
+                } ${turn !== 'blue' || blueWalls <= 0 ? 'opacity-40 cursor-not-allowed' : 'cursor-pointer'}`}
+              >
+                <Shield className="rotate-90" size={12} />
+                <span>Vertical Wall {selectedWallMode === 'v' && turn === 'blue' ? '(Active)' : ''}</span>
+              </button>
+            </div>
+          )}
+        </div>
       </div>
 
       {/* ───────────────── LIVE MOVE NOTATION RIBBON ───────────────── */}
@@ -1630,7 +1625,8 @@ export default function GameBoard({
               const isValid = validMoves.some((m) => m.r === r && m.c === c);
               const isAiTurn = gameMode === 'ai' && turn === 'blue';
               const isMyTurn = gameMode !== 'multiplayer' || turn === myColor;
-              const isCellInteractive = isMyTurn && !isAiTurn && !gameResult;
+              const isPawnMoveMode = selectedWallMode === null;
+              const isCellInteractive = isMyTurn && !isAiTurn && !gameResult && isPawnMoveMode;
 
               return (
                 <div
@@ -1638,7 +1634,7 @@ export default function GameBoard({
                   onClick={() => handleCellClick(r, c)}
                   style={{ backgroundColor: activeTheme.cellBg }}
                   className={`relative flex items-center justify-center rounded-lg transition-all aspect-square touch-manipulation ${
-                    !isCellInteractive ? 'cursor-not-allowed' : 'cursor-pointer hover:brightness-110'
+                    !isCellInteractive ? 'cursor-default' : 'cursor-pointer hover:brightness-110'
                   } ${
                     isValid && isCellInteractive
                       ? 'ring-2 ring-amber-400 ring-offset-1 ring-offset-black/50 shadow-sm'
@@ -1704,7 +1700,7 @@ export default function GameBoard({
               const topPct = (r + 1) * (100 / 9);
               const isAiTurn = gameMode === 'ai' && turn === 'blue';
               const isMyTurn = gameMode !== 'multiplayer' || turn === myColor;
-              const isSensorActive = isMyTurn && !isAiTurn && !gameResult;
+              const isSensorActive = isMyTurn && !isAiTurn && !gameResult && selectedWallMode !== null;
 
               return (
                 <div
@@ -1715,14 +1711,14 @@ export default function GameBoard({
                     top: `${topPct}%`,
                     transform: 'translate(-50%, -50%)',
                   }}
-                  className={`absolute w-9 h-9 sm:w-11 sm:h-11 rounded-full z-30 transition-all touch-manipulation group flex items-center justify-center ${
+                  className={`absolute w-10 h-10 sm:w-12 sm:h-12 rounded-full z-30 transition-all touch-manipulation group flex items-center justify-center ${
                     !isSensorActive
-                      ? 'pointer-events-none cursor-not-allowed'
-                      : 'pointer-events-auto cursor-pointer hover:bg-amber-400/25 active:bg-amber-400/40 active:scale-95'
+                      ? 'pointer-events-none'
+                      : 'pointer-events-auto cursor-pointer hover:bg-amber-400/30 active:bg-amber-400/50 active:scale-95'
                   }`}
                 >
                   {isSensorActive && (
-                    <div className="w-1.5 h-1.5 rounded-full bg-amber-400/0 group-hover:bg-amber-400/80 transition-all" />
+                    <div className="w-2 h-2 rounded-full bg-amber-400/60 group-hover:bg-amber-400 transition-all ring-2 ring-amber-400/60 animate-pulse" />
                   )}
                 </div>
               );
@@ -1733,7 +1729,7 @@ export default function GameBoard({
 
       {/* ───────────────── BOTTOM BAR (You) ───────────────── */}
       <div
-        className={`p-3 rounded-2xl border transition-all duration-200 ${
+        className={`p-2.5 sm:p-3 rounded-2xl border transition-all duration-200 ${
           turn === myColor
             ? myColor === 'blue'
               ? 'bg-blue-950/30 border-blue-500/70 shadow-lg shadow-blue-950/40'
@@ -1741,59 +1737,89 @@ export default function GameBoard({
             : 'bg-cardDark/80 border-borderDark/40'
         }`}
       >
-        <div className="flex items-center gap-2 mb-2.5">
+        {/* Wall Selection Toggles + 3-Dot Menu Row */}
+        <div className="flex items-center gap-2 mb-2">
+          {/* Horizontal Wall Toggle */}
           <button
             type="button"
-            onClick={() => (myColor === 'blue' ? setBlueOrientation('h') : setRedOrientation('h'))}
-            disabled={turn !== myColor}
-            className={`flex-1 py-1.5 rounded-xl border text-[11px] font-bold flex items-center justify-center gap-1.5 transition ${
-              (myColor === 'blue' ? blueOrientation : redOrientation) === 'h'
-                ? myColor === 'blue'
-                  ? 'bg-blue-500 text-white border-blue-400 shadow-sm'
-                  : 'bg-rose-500 text-white border-rose-400 shadow-sm'
-                : 'bg-bgDark/60 border-borderDark/60 text-gray-400 hover:text-gray-200'
-            } ${turn !== myColor ? 'opacity-40 cursor-not-allowed' : 'cursor-pointer'}`}
+            onClick={() => {
+              if (turn !== myColor && gameMode !== 'local') return;
+              const remaining = myColor === 'blue' ? blueWalls : redWalls;
+              if (remaining <= 0) {
+                setWarningMsg('No barricades remaining!');
+                return;
+              }
+              setSelectedWallMode((prev) => (prev === 'h' ? null : 'h'));
+            }}
+            disabled={(turn !== myColor && gameMode !== 'local') || (myColor === 'blue' ? blueWalls <= 0 : redWalls <= 0)}
+            className={`flex-1 py-2 px-2.5 rounded-xl border text-[11px] font-bold flex items-center justify-center gap-1.5 transition ${
+              selectedWallMode === 'h'
+                ? 'bg-amber-500 text-black border-amber-400 ring-2 ring-amber-400/60 shadow-md font-black scale-[1.02]'
+                : 'bg-bgDark/70 border-borderDark/70 text-gray-300 hover:text-white hover:bg-borderDark/60'
+            } ${(turn !== myColor && gameMode !== 'local') || (myColor === 'blue' ? blueWalls <= 0 : redWalls <= 0) ? 'opacity-40 cursor-not-allowed' : 'cursor-pointer'}`}
+            title="Toggle Horizontal Wall mode"
           >
-            <Shield size={12} />
-            <span>Horizontal Wall</span>
+            <Shield size={13} className={selectedWallMode === 'h' ? 'text-black' : 'text-amber-400'} />
+            <span className="truncate">Horizontal {selectedWallMode === 'h' ? '✓' : ''}</span>
           </button>
+
+          {/* Vertical Wall Toggle */}
           <button
             type="button"
-            onClick={() => (myColor === 'blue' ? setBlueOrientation('v') : setRedOrientation('v'))}
-            disabled={turn !== myColor}
-            className={`flex-1 py-1.5 rounded-xl border text-[11px] font-bold flex items-center justify-center gap-1.5 transition ${
-              (myColor === 'blue' ? blueOrientation : redOrientation) === 'v'
-                ? myColor === 'blue'
-                  ? 'bg-blue-500 text-white border-blue-400 shadow-sm'
-                  : 'bg-rose-500 text-white border-rose-400 shadow-sm'
-                : 'bg-bgDark/60 border-borderDark/60 text-gray-400 hover:text-gray-200'
-            } ${turn !== myColor ? 'opacity-40 cursor-not-allowed' : 'cursor-pointer'}`}
+            onClick={() => {
+              if (turn !== myColor && gameMode !== 'local') return;
+              const remaining = myColor === 'blue' ? blueWalls : redWalls;
+              if (remaining <= 0) {
+                setWarningMsg('No barricades remaining!');
+                return;
+              }
+              setSelectedWallMode((prev) => (prev === 'v' ? null : 'v'));
+            }}
+            disabled={(turn !== myColor && gameMode !== 'local') || (myColor === 'blue' ? blueWalls <= 0 : redWalls <= 0)}
+            className={`flex-1 py-2 px-2.5 rounded-xl border text-[11px] font-bold flex items-center justify-center gap-1.5 transition ${
+              selectedWallMode === 'v'
+                ? 'bg-amber-500 text-black border-amber-400 ring-2 ring-amber-400/60 shadow-md font-black scale-[1.02]'
+                : 'bg-bgDark/70 border-borderDark/70 text-gray-300 hover:text-white hover:bg-borderDark/60'
+            } ${(turn !== myColor && gameMode !== 'local') || (myColor === 'blue' ? blueWalls <= 0 : redWalls <= 0) ? 'opacity-40 cursor-not-allowed' : 'cursor-pointer'}`}
+            title="Toggle Vertical Wall mode"
           >
-            <Shield className="rotate-90" size={12} />
-            <span>Vertical Wall</span>
+            <Shield className={`rotate-90 ${selectedWallMode === 'v' ? 'text-black' : 'text-amber-400'}`} size={13} />
+            <span className="truncate">Vertical {selectedWallMode === 'v' ? '✓' : ''}</span>
+          </button>
+
+          {/* 3-Dot More / Actions Menu Button */}
+          <button
+            type="button"
+            onClick={() => setShowActionMenu(true)}
+            className="p-2 sm:p-2.5 rounded-xl border border-borderDark/70 bg-bgDark/70 hover:bg-borderDark text-gray-300 hover:text-white transition cursor-pointer flex items-center justify-center shrink-0"
+            title="Match Actions & Settings"
+          >
+            <MoreVertical size={16} />
           </button>
         </div>
 
-        <div className="flex items-center justify-between">
-          <div className="flex items-center gap-2">
+        {/* Player Profile & Clock Row */}
+        <div className="flex items-center justify-between gap-2 min-w-0">
+          <div className="flex items-center gap-2 min-w-0 flex-1">
             <div
-              className={`w-3.5 h-3.5 rounded-full ${
+              className={`w-3.5 h-3.5 rounded-full shrink-0 ${
                 myColor === 'blue' ? 'bg-blue-500 shadow-blue-500/50' : 'bg-rose-500 shadow-rose-500/50'
               } shadow-md`}
             />
-            <span className="text-sm font-bold text-gray-200">
+            <span className="text-xs sm:text-sm font-bold text-gray-200 truncate">
               {userStats.username || 'You'} ({myColor === 'blue' ? 'Blue' : 'Red'})
             </span>
             <span
-              className={`text-xs font-semibold ${
+              className={`text-[11px] font-semibold shrink-0 ${
                 myColor === 'blue' ? 'text-blue-400' : 'text-rose-400'
               }`}
             >
-              {myColor === 'blue' ? blueWalls : redWalls}/10
+              🧱 {myColor === 'blue' ? blueWalls : redWalls}/10
             </span>
           </div>
+
           <div
-            className={`px-2.5 py-1 rounded-lg text-xs font-mono font-bold transition-all ${
+            className={`px-2.5 py-1 rounded-lg text-xs font-mono font-bold shrink-0 transition-all ${
               turn === myColor
                 ? myColor === 'blue'
                   ? 'bg-blue-600 text-white animate-pulse shadow-md shadow-blue-600/30'
@@ -1949,6 +1975,137 @@ export default function GameBoard({
         }
         onSendMessage={handleSendMessage}
         messages={chatMessages}
+      />
+
+      {/* ───────────────── 3-DOT ACTION MENU BOTTOM SHEET ───────────────── */}
+      {showActionMenu && (
+        <div
+          className="fixed inset-0 bg-black/75 backdrop-blur-xs flex items-end sm:items-center justify-center z-50 p-3 animate-in fade-in duration-150"
+          onClick={() => setShowActionMenu(false)}
+        >
+          <div
+            className="w-full max-w-sm bg-[#1c1c1e] border border-borderDark/80 rounded-3xl p-4 shadow-2xl flex flex-col gap-2 select-none animate-in slide-in-from-bottom-4 duration-200"
+            onClick={(e) => e.stopPropagation()}
+          >
+            <div className="flex items-center justify-between pb-2 border-b border-borderDark/50 px-1">
+              <h3 className="text-sm font-bold text-gray-200">Match Menu</h3>
+              <button
+                type="button"
+                onClick={() => setShowActionMenu(false)}
+                className="p-1 text-gray-400 hover:text-white transition cursor-pointer"
+              >
+                <X size={18} />
+              </button>
+            </div>
+
+            <div className="flex flex-col gap-1.5 py-1">
+              {/* Sound / Volume Toggle */}
+              <button
+                type="button"
+                onClick={() => setIsMuted((prev) => !prev)}
+                className="flex items-center justify-between p-3 rounded-2xl bg-cardDark/60 hover:bg-borderDark/60 border border-borderDark/40 transition cursor-pointer text-left"
+              >
+                <div className="flex items-center gap-3">
+                  <div className={`p-2 rounded-xl ${isMuted ? 'bg-rose-500/20 text-rose-400' : 'bg-green-500/20 text-green-400'}`}>
+                    {isMuted ? <VolumeX size={18} /> : <Volume2 size={18} />}
+                  </div>
+                  <div>
+                    <div className="text-xs font-bold text-gray-200">{isMuted ? 'Sound Muted' : 'Sound On'}</div>
+                    <div className="text-[10px] text-gray-400">Toggle in-game audio effects</div>
+                  </div>
+                </div>
+                <span className={`text-[10px] font-bold px-2 py-0.5 rounded-lg ${isMuted ? 'bg-rose-950 text-rose-300' : 'bg-green-950 text-green-300'}`}>
+                  {isMuted ? 'MUTED' : 'ACTIVE'}
+                </span>
+              </button>
+
+              {/* Haptics & Settings Drawer */}
+              <button
+                type="button"
+                onClick={() => {
+                  setShowActionMenu(false);
+                  onOpenSettings?.();
+                }}
+                className="flex items-center justify-between p-3 rounded-2xl bg-cardDark/60 hover:bg-borderDark/60 border border-borderDark/40 transition cursor-pointer text-left"
+              >
+                <div className="flex items-center gap-3">
+                  <div className="p-2 rounded-xl bg-amber-500/20 text-brandOrange">
+                    <Sliders size={18} />
+                  </div>
+                  <div>
+                    <div className="text-xs font-bold text-gray-200">Settings & Haptics</div>
+                    <div className="text-[10px] text-gray-400">Volume slider & vibration options</div>
+                  </div>
+                </div>
+                <ChevronRight size={16} className="text-gray-500" />
+              </button>
+
+              {/* Help & Rules */}
+              <button
+                type="button"
+                onClick={() => {
+                  setShowActionMenu(false);
+                  setShowRulesModal(true);
+                }}
+                className="flex items-center justify-between p-3 rounded-2xl bg-cardDark/60 hover:bg-borderDark/60 border border-borderDark/40 transition cursor-pointer text-left"
+              >
+                <div className="flex items-center gap-3">
+                  <div className="p-2 rounded-xl bg-cyan-500/20 text-cyan-400">
+                    <BookOpen size={18} />
+                  </div>
+                  <div>
+                    <div className="text-xs font-bold text-gray-200">How to Play & Rules</div>
+                    <div className="text-[10px] text-gray-400">Pawn moves and barricade guidelines</div>
+                  </div>
+                </div>
+                <ChevronRight size={16} className="text-gray-500" />
+              </button>
+
+              {/* Resign Match */}
+              <button
+                type="button"
+                onClick={() => {
+                  handleResignClick();
+                  if (confirmResign) setShowActionMenu(false);
+                }}
+                className={`flex items-center justify-between p-3 rounded-2xl border transition cursor-pointer text-left ${
+                  confirmResign
+                    ? 'bg-rose-950/80 border-rose-600 text-rose-300 animate-pulse'
+                    : 'bg-cardDark/60 hover:bg-rose-950/30 border-borderDark/40 hover:border-rose-800/60 text-gray-200'
+                }`}
+              >
+                <div className="flex items-center gap-3">
+                  <div className="p-2 rounded-xl bg-rose-500/20 text-rose-400">
+                    <Flag size={18} />
+                  </div>
+                  <div>
+                    <div className="text-xs font-bold text-rose-400">
+                      {confirmResign ? 'Confirm Resign?' : 'Resign Match'}
+                    </div>
+                    <div className="text-[10px] text-gray-400">Concede and forfeit this match</div>
+                  </div>
+                </div>
+                <span className="text-[10px] font-bold text-rose-400">
+                  {confirmResign ? 'Tap to Confirm' : 'Resign'}
+                </span>
+              </button>
+            </div>
+
+            <button
+              type="button"
+              onClick={() => setShowActionMenu(false)}
+              className="w-full py-2.5 rounded-xl bg-cardDark hover:bg-borderDark border border-borderDark text-gray-400 hover:text-white text-xs font-semibold transition cursor-pointer mt-1"
+            >
+              Close
+            </button>
+          </div>
+        </div>
+      )}
+
+      {/* Interactive Rules Modal */}
+      <HowToPlayModal
+        isOpen={showRulesModal}
+        onClose={() => setShowRulesModal(false)}
       />
     </div>
   );

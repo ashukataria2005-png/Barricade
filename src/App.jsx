@@ -229,6 +229,23 @@ export default function App() {
     setInGame(true);
   };
 
+  const handleLogoClick = () => {
+    if (inGame) {
+      if (!window.confirm('Do you want to leave the active match and return to the home lobby?')) {
+        return;
+      }
+      if (multiplayerSession) {
+        multiplayerSession.close();
+        setMultiplayerSession(null);
+      }
+      setInGame(false);
+    }
+    if (isWatchingTv) setIsWatchingTv(false);
+    if (inKingOfTheHill) setInKingOfTheHill(false);
+    if (analyzingMatch) setAnalyzingMatch(null);
+    setActiveTab('play');
+  };
+
   const handleStartCustomGame = ({ startingWalls, incrementSeconds, gameMode: selectedMode }) => {
     setSandboxRules({ startingWalls, incrementSeconds });
     setGameMode(selectedMode || 'local');
@@ -475,66 +492,41 @@ export default function App() {
 
         {/* Top Header */}
         {!inGame && !isWatchingTv && !inKingOfTheHill && !analyzingMatch && (
-          <header className="flex items-center justify-between px-4 py-3 bg-bgDark border-b border-borderDark/40">
-            <h1 className="text-2xl font-black text-brandOrange tracking-wide">
+          <header className="flex items-center justify-between px-3 sm:px-4 py-2.5 sm:py-3 bg-bgDark border-b border-borderDark/40">
+            <h1
+              onClick={handleLogoClick}
+              className="text-xl sm:text-2xl font-black text-brandOrange tracking-wide cursor-pointer hover:brightness-110 active:scale-95 transition select-none flex items-center gap-1.5"
+              title="Barricade Home"
+            >
               Barricade
             </h1>
             <div className="flex items-center gap-2">
-              <button
-                type="button"
-                onClick={() => setShowThemeModal(true)}
-                className="flex items-center gap-1.5 bg-cardDark hover:bg-borderDark/60 px-2.5 py-1 rounded-full border border-borderDark text-xs font-semibold text-gray-300 hover:text-white transition cursor-pointer"
-                title="Board & Pawn Themes"
-              >
-                <Palette size={14} className="text-brandOrange" />
-                <span className="hidden sm:inline text-[11px]">Theme</span>
-              </button>
-              <button
-                type="button"
-                onClick={() => setShowQuestsModal(true)}
-                className="relative p-1.5 bg-cardDark hover:bg-borderDark/60 rounded-full border border-borderDark text-gray-300 hover:text-white transition cursor-pointer"
-                title="Daily Quests & Pass"
-              >
-                <Target size={14} className="text-brandOrange" />
-                <span className="absolute -top-0.5 -right-0.5 w-2 h-2 rounded-full bg-green-500 animate-pulse" />
-              </button>
-              <button
-                type="button"
-                onClick={() => setShowMessagesModal(true)}
-                className="relative p-1.5 bg-cardDark hover:bg-borderDark/60 rounded-full border border-borderDark text-gray-300 hover:text-white transition cursor-pointer"
-                title="Direct Messages"
-              >
-                <MessageSquare size={14} className="text-brandOrange" />
-                <span className="absolute -top-0.5 -right-0.5 w-2 h-2 rounded-full bg-brandOrange animate-pulse" />
-              </button>
+              {/* Unified Store & Currency Pill (Gems & Coins) */}
               <div
                 onClick={() => setShowStoreModal(true)}
-                className="flex items-center gap-1 bg-cardDark hover:bg-borderDark px-2.5 py-1 rounded-full border border-cyan-500/40 text-xs cursor-pointer shadow-xs transition"
-                title="Barricade Shop (Gems)"
+                className="flex items-center gap-2 bg-cardDark/90 hover:bg-borderDark/80 px-2.5 py-1 rounded-full border border-borderDark/70 text-xs cursor-pointer shadow-xs transition active:scale-95"
+                title="Barricade Store & Wallet"
               >
-                <Gem className="text-cyan-400" size={13} />
-                <span className="font-mono text-cyan-300 text-[11px] font-bold">{userStats.gems || 150}</span>
+                <div className="flex items-center gap-1">
+                  <Gem className="text-cyan-400" size={13} />
+                  <span className="font-mono text-cyan-300 text-[11px] font-bold">{userStats.gems || 150}</span>
+                </div>
+                <div className="w-[1px] h-3 bg-borderDark/60" />
+                <div className="flex items-center gap-1">
+                  <span className="text-xs leading-none">🪙</span>
+                  <span className="font-mono text-amber-300 text-[11px] font-bold">{userStats.coins ?? 250}</span>
+                </div>
               </div>
-              <div
-                onClick={() => setShowStoreModal(true)}
-                className="flex items-center gap-1 bg-cardDark hover:bg-borderDark px-2 py-1 rounded-full border border-amber-500/40 text-xs cursor-pointer shadow-xs transition"
-                title="Coins Wallet"
-              >
-                <span className="text-xs leading-none">🪙</span>
-                <span className="font-mono text-amber-300 text-[11px] font-bold">{userStats.coins ?? 250}</span>
-              </div>
+
+              {/* Profile Avatar Chip */}
               <div
                 onClick={() => setShowProfileEditModal(true)}
-                className="flex items-center gap-1.5 bg-cardDark hover:bg-borderDark px-2.5 py-1 rounded-full border border-borderDark text-xs font-semibold transition cursor-pointer"
+                className="flex items-center gap-1.5 bg-cardDark/90 hover:bg-borderDark/80 px-2.5 py-1 rounded-full border border-borderDark/70 text-xs font-semibold transition cursor-pointer active:scale-95"
                 title="Edit Profile"
               >
                 <span>{userStats.flag || '🇮🇳'}</span>
-                <span className="text-gray-200">{userStats.username || 'AshuKataria'}</span>
+                <span className="text-gray-200 hidden sm:inline max-w-[80px] truncate">{userStats.username || 'AshuKataria'}</span>
                 <span className="text-brandOrange font-bold">{userStats.elo || 1092}</span>
-              </div>
-              <div className="flex items-center gap-1 bg-cardDark px-2 py-1 rounded-full border border-borderDark text-xs font-bold text-amber-500">
-                <Flame className="fill-amber-500 text-amber-500" size={14} />
-                <span>{userStats.streak || 1}</span>
               </div>
             </div>
           </header>
@@ -958,6 +950,34 @@ export default function App() {
                       <span>View</span>
                       <ChevronRight size={14} />
                     </div>
+                  </div>
+
+                  {/* Quick Customization & Social Shortcuts */}
+                  <div className="grid grid-cols-3 gap-2">
+                    <button
+                      type="button"
+                      onClick={() => setShowThemeModal(true)}
+                      className="flex flex-col items-center justify-center gap-1.5 p-2.5 rounded-xl bg-cardDark hover:bg-borderDark/60 border border-borderDark/60 transition cursor-pointer text-center group"
+                    >
+                      <Palette size={18} className="text-brandOrange group-hover:scale-110 transition" />
+                      <span className="text-[11px] font-bold text-gray-200">Themes</span>
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => setShowMessagesModal(true)}
+                      className="flex flex-col items-center justify-center gap-1.5 p-2.5 rounded-xl bg-cardDark hover:bg-borderDark/60 border border-borderDark/60 transition cursor-pointer text-center group relative"
+                    >
+                      <MessageSquare size={18} className="text-brandOrange group-hover:scale-110 transition" />
+                      <span className="text-[11px] font-bold text-gray-200">Messages</span>
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => setShowQuestsModal(true)}
+                      className="flex flex-col items-center justify-center gap-1.5 p-2.5 rounded-xl bg-cardDark hover:bg-borderDark/60 border border-borderDark/60 transition cursor-pointer text-center group"
+                    >
+                      <Target size={18} className="text-brandOrange group-hover:scale-110 transition" />
+                      <span className="text-[11px] font-bold text-gray-200">Quests</span>
+                    </button>
                   </div>
 
                   {/* Match History */}
