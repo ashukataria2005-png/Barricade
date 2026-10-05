@@ -23,6 +23,7 @@ import { getStoredTheme } from '../utils/themes';
 import { getStoredSettings } from '../utils/settings';
 import { hapticMove, hapticWall, hapticError, hapticVictory } from '../utils/haptics';
 import { checkMatchAchievements } from '../utils/achievements';
+import { t } from '../utils/i18n';
 import ChatModal from './ChatModal';
 
 // ───────────────── PROCEDURAL WEB AUDIO SYNTHESIZER ─────────────────
@@ -175,6 +176,8 @@ export default function GameBoard({
   myColor = 'red',
   opponentName,
   tournamentMatch,
+  equippedCosmetics,
+  lang = 'en',
 }) {
   const activeTheme = theme || getStoredTheme();
   const initialSeconds = (gameMinutes || 3) * 60;
@@ -243,6 +246,47 @@ export default function GameBoard({
 
   // AI thinking state
   const [isAiThinking, setIsAiThinking] = useState(false);
+
+  // Cosmetic skin style helpers
+  const getPawnCosmeticStyle = (color) => {
+    const skin = equippedCosmetics?.pawn || 'pawn_default';
+    if (skin === 'pawn_fire') {
+      return color === 'red'
+        ? 'bg-gradient-to-br from-amber-400 via-orange-500 to-rose-600 border-amber-300 ring-2 ring-orange-500/80 shadow-[0_0_14px_rgba(249,115,22,0.9)] animate-pulse'
+        : 'bg-gradient-to-br from-orange-400 to-rose-600 border-amber-300 ring-2 ring-rose-500/80 shadow-[0_0_14px_rgba(244,63,94,0.9)]';
+    }
+    if (skin === 'pawn_neon') {
+      return color === 'red'
+        ? 'bg-gradient-to-br from-cyan-300 via-cyan-500 to-blue-600 border-cyan-200 ring-2 ring-cyan-400/90 shadow-[0_0_16px_rgba(6,182,212,0.9)] animate-pulse'
+        : 'bg-gradient-to-br from-cyan-400 to-blue-600 border-cyan-200 ring-2 ring-blue-400/90 shadow-[0_0_16px_rgba(59,130,246,0.9)]';
+    }
+    if (skin === 'pawn_gold') {
+      return 'bg-gradient-to-br from-yellow-300 via-amber-400 to-yellow-500 border-yellow-200 ring-2 ring-yellow-400/90 shadow-[0_0_16px_rgba(251,191,36,0.9)]';
+    }
+    return color === 'red' ? activeTheme.redPawn : activeTheme.bluePawn;
+  };
+
+  const getWallCosmeticStyle = (orientation) => {
+    const skin = equippedCosmetics?.wall || 'wall_default';
+    if (skin === 'wall_obsidian') {
+      return orientation === 'h'
+        ? 'bg-gradient-to-r from-zinc-950 via-slate-900 to-zinc-950 border-zinc-700 shadow-md ring-1 ring-zinc-700/50'
+        : 'bg-gradient-to-b from-zinc-950 via-slate-900 to-zinc-950 border-zinc-700 shadow-md ring-1 ring-zinc-700/50';
+    }
+    if (skin === 'wall_carbon') {
+      return orientation === 'h'
+        ? 'bg-gradient-to-r from-slate-800 via-zinc-800 to-slate-900 border-slate-600 shadow-md'
+        : 'bg-gradient-to-b from-slate-800 via-zinc-800 to-slate-900 border-slate-600 shadow-md';
+    }
+    if (skin === 'wall_gold') {
+      return orientation === 'h'
+        ? 'bg-gradient-to-r from-amber-300 via-yellow-400 to-amber-500 border-yellow-200 shadow-[0_0_10px_rgba(251,191,36,0.7)]'
+        : 'bg-gradient-to-b from-amber-300 via-yellow-400 to-amber-500 border-yellow-200 shadow-[0_0_10px_rgba(251,191,36,0.7)]';
+    }
+    return orientation === 'h'
+      ? `bg-gradient-to-r ${activeTheme.wallGradient} border ${activeTheme.wallBorder}`
+      : `bg-gradient-to-b ${activeTheme.wallGradient} border ${activeTheme.wallBorder}`;
+  };
 
   // Double tap confirmation states
   const [confirmResign, setConfirmResign] = useState(false);
@@ -1243,7 +1287,7 @@ export default function GameBoard({
               }`}
             >
               <Flag size={13} />
-              <span>{confirmResign ? 'Confirm?' : 'Resign'}</span>
+              <span>{confirmResign ? t('confirm_resign', lang) : t('resign', lang)}</span>
             </button>
 
             <button
@@ -1503,8 +1547,8 @@ export default function GameBoard({
           }`}
         >
           {turn === myColor
-            ? '⚡ Your Turn! Move your pawn or deploy a barricade.'
-            : "⏳ Waiting for opponent's turn..."}
+            ? t('your_turn', lang)
+            : t('waiting_opponent', lang)}
         </div>
       )}
 
@@ -1544,10 +1588,10 @@ export default function GameBoard({
                   }`}
                 >
                   {isRed && (
-                    <div className={`w-6 h-6 rounded-full border-2 shadow-lg ${activeTheme.redPawn}`} />
+                    <div className={`w-6 h-6 rounded-full border-2 shadow-lg ${getPawnCosmeticStyle('red')}`} />
                   )}
                   {isBlue && (
-                    <div className={`w-6 h-6 rounded-full border-2 shadow-lg ${activeTheme.bluePawn}`} />
+                    <div className={`w-6 h-6 rounded-full border-2 shadow-lg ${getPawnCosmeticStyle('blue')}`} />
                   )}
                   {isValid && !isRed && !isBlue && isCellInteractive && (
                     <div className="w-2.5 h-2.5 rounded-full bg-amber-400 animate-pulse" />
@@ -1574,7 +1618,7 @@ export default function GameBoard({
                     width: `${200 / 9}%`,
                     height: '8px',
                   }}
-                  className={`absolute bg-gradient-to-r ${activeTheme.wallGradient} rounded-full shadow-lg border ${activeTheme.wallBorder} z-20`}
+                  className={`absolute rounded-full shadow-lg z-20 ${getWallCosmeticStyle('h')}`}
                 />
               );
             } else {
@@ -1587,7 +1631,7 @@ export default function GameBoard({
                     width: '8px',
                     height: `${200 / 9}%`,
                   }}
-                  className={`absolute bg-gradient-to-b ${activeTheme.wallGradient} rounded-full shadow-lg border ${activeTheme.wallBorder} z-20`}
+                  className={`absolute rounded-full shadow-lg z-20 ${getWallCosmeticStyle('v')}`}
                 />
               );
             }

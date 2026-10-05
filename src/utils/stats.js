@@ -312,3 +312,106 @@ export const claimQuestReward = (questId) => {
     leveledUp,
   };
 };
+
+// ───────────────── IN-GAME COSMETICS & STORE SYSTEM ─────────────────
+
+const COSMETICS_KEY = 'barricade_unlocked_cosmetics';
+
+export const COSMETICS_CATALOG = {
+  pawn: [
+    { id: 'pawn_default', name: 'Classic Wood', price: 0, icon: '🪵', desc: 'Handcrafted solid oak' },
+    { id: 'pawn_fire', name: 'Fire Spark', price: 100, icon: '🔥', desc: 'Blazing flame aura and trail' },
+    { id: 'pawn_neon', name: 'Neon Pulse', price: 150, icon: '⚡', desc: 'Cyan electric energy ring' },
+    { id: 'pawn_gold', name: 'Royal Gold', price: 250, icon: '👑', desc: 'Gleaming golden luster' },
+  ],
+  wall: [
+    { id: 'wall_default', name: 'Classic Oak', price: 0, icon: '🪵', desc: 'Standard solid timber' },
+    { id: 'wall_obsidian', name: 'Obsidian Dark', price: 75, icon: '⬛', desc: 'Glossy dark volcanic stone' },
+    { id: 'wall_carbon', name: 'Carbon Fiber', price: 120, icon: '🏁', desc: 'High-tech composite weave' },
+    { id: 'wall_gold', name: 'Golden Beam', price: 200, icon: '✨', desc: 'Radiant golden barricade' },
+  ],
+  frame: [
+    { id: 'frame_default', name: 'Standard Circle', price: 0, icon: '⚪', desc: 'Clean minimal border' },
+    { id: 'frame_cyber', name: 'Cyber Hexagon', price: 80, icon: '🔷', desc: 'Pulsing cyan tech frame' },
+    { id: 'frame_flame', name: 'Flaming Aura', price: 140, icon: '🔥', desc: 'Blazing fiery border' },
+    { id: 'frame_crown', name: 'Diamond Crown', price: 220, icon: '👑', desc: 'Jewel-studded regal frame' },
+  ],
+};
+
+const DEFAULT_COSMETICS = {
+  unlocked: ['pawn_default', 'wall_default', 'frame_default'],
+  equipped: {
+    pawn: 'pawn_default',
+    wall: 'wall_default',
+    frame: 'frame_default',
+  },
+};
+
+export const getStoredCosmetics = () => {
+  if (typeof window === 'undefined') return DEFAULT_COSMETICS;
+  try {
+    const raw = localStorage.getItem(COSMETICS_KEY);
+    if (!raw) {
+      localStorage.setItem(COSMETICS_KEY, JSON.stringify(DEFAULT_COSMETICS));
+      return DEFAULT_COSMETICS;
+    }
+    return { ...DEFAULT_COSMETICS, ...JSON.parse(raw) };
+  } catch (e) {
+    return DEFAULT_COSMETICS;
+  }
+};
+
+export const saveStoredCosmetics = (data) => {
+  if (typeof window === 'undefined') return;
+  try {
+    localStorage.setItem(COSMETICS_KEY, JSON.stringify(data));
+  } catch (e) {}
+};
+
+export const buyCosmeticItem = (item, category) => {
+  const user = getStoredStats();
+  const cosmetics = getStoredCosmetics();
+
+  if (cosmetics.unlocked.includes(item.id)) {
+    return { success: true, message: 'Already owned', cosmetics, userStats: user };
+  }
+
+  if ((user.gems || 0) < item.price) {
+    return { success: false, message: 'Not enough gems!', cosmetics, userStats: user };
+  }
+
+  const updatedUser = {
+    ...user,
+    gems: (user.gems || 0) - item.price,
+  };
+  saveStoredStats(updatedUser);
+
+  const updatedCosmetics = {
+    ...cosmetics,
+    unlocked: [...cosmetics.unlocked, item.id],
+    equipped: {
+      ...cosmetics.equipped,
+      [category]: item.id,
+    },
+  };
+  saveStoredCosmetics(updatedCosmetics);
+
+  return { success: true, message: `Purchased & Equipped ${item.name}!`, cosmetics: updatedCosmetics, userStats: updatedUser };
+};
+
+export const equipCosmeticItem = (category, itemId) => {
+  const cosmetics = getStoredCosmetics();
+  if (!cosmetics.unlocked.includes(itemId)) {
+    return cosmetics;
+  }
+
+  const updated = {
+    ...cosmetics,
+    equipped: {
+      ...cosmetics.equipped,
+      [category]: itemId,
+    },
+  };
+  saveStoredCosmetics(updated);
+  return updated;
+};

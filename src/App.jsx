@@ -30,7 +30,10 @@ import {
   Download,
   Target,
   Crown,
-  Edit3
+  Edit3,
+  ShoppingBag,
+  Globe,
+  HelpCircle
 } from 'lucide-react';
 import GameBoard from './components/GameBoard';
 import PuzzlesView from './components/PuzzlesView';
@@ -46,11 +49,13 @@ import AchievementsModal from './components/AchievementsModal';
 import TournamentModal from './components/TournamentModal';
 import QuestsModal from './components/QuestsModal';
 import ProfileEditModal from './components/ProfileEditModal';
-import { getStoredStats, getTierFromLevel, getXpForNextLevel, AVATAR_PRESETS } from './utils/stats';
+import StoreModal from './components/StoreModal';
+import { getStoredStats, getTierFromLevel, getXpForNextLevel, AVATAR_PRESETS, getStoredCosmetics } from './utils/stats';
 import { getStoredTheme } from './utils/themes';
 import { getStoredSettings } from './utils/settings';
 import { initHost, joinRoom } from './utils/multiplayer';
 import { getAchievementsList } from './utils/achievements';
+import { t, getStoredLanguage, setStoredLanguage } from './utils/i18n';
 
 export default function App() {
   const [activeTab, setActiveTab] = useState('play');
@@ -120,6 +125,15 @@ export default function App() {
   const [showQuestsModal, setShowQuestsModal] = useState(false);
   const [showProfileEditModal, setShowProfileEditModal] = useState(false);
   const [activeTournamentMatch, setActiveTournamentMatch] = useState(null);
+
+  // In-Game Cosmetics Store & Multi-Language
+  const [showStoreModal, setShowStoreModal] = useState(false);
+  const [cosmetics, setCosmetics] = useState(() => getStoredCosmetics());
+  const [lang, setLang] = useState(() => getStoredLanguage());
+
+  // Interactive Onboarding Tour state
+  const [showTour, setShowTour] = useState(false);
+  const [tourStep, setTourStep] = useState(1);
 
   // Click outside to close dropdown
   useEffect(() => {
@@ -357,6 +371,31 @@ export default function App() {
     setInGame(true);
   };
 
+  // Language & Onboarding Tour handlers
+  useEffect(() => {
+    if (typeof window !== 'undefined') {
+      const tourSeen = localStorage.getItem('barricade_tour_seen');
+      if (!tourSeen) {
+        setShowTour(true);
+      }
+    }
+  }, []);
+
+  const handleFinishTour = () => {
+    setShowTour(false);
+    if (typeof window !== 'undefined') {
+      localStorage.setItem('barricade_tour_seen', 'true');
+    }
+  };
+
+  const handleToggleLanguage = () => {
+    const next = lang === 'en' ? 'hi' : 'en';
+    setLang(next);
+    setStoredLanguage(next);
+    setToastMsg(next === 'hi' ? 'भाषा: हिन्दी सेट की गई 🇮🇳' : 'Language set to English 🇬🇧');
+    setTimeout(() => setToastMsg(''), 2500);
+  };
+
   const winRate =
     userStats.games > 0
       ? Math.round((userStats.wins / userStats.games) * 100)
@@ -407,9 +446,9 @@ export default function App() {
                 <span className="absolute -top-0.5 -right-0.5 w-2 h-2 rounded-full bg-brandOrange animate-pulse" />
               </button>
               <div
-                onClick={() => setShowQuestsModal(true)}
-                className="flex items-center gap-1 bg-cardDark px-2 py-1 rounded-full border border-borderDark text-xs cursor-pointer hover:border-cyan-500/50 transition"
-                title="Gems"
+                onClick={() => setShowStoreModal(true)}
+                className="flex items-center gap-1 bg-cardDark hover:bg-borderDark px-2.5 py-1 rounded-full border border-cyan-500/40 text-xs cursor-pointer shadow-xs transition"
+                title="Barricade Shop (Gems)"
               >
                 <Gem className="text-cyan-400" size={13} />
                 <span className="font-mono text-cyan-300 text-[11px] font-bold">{userStats.gems || 150}</span>
@@ -497,6 +536,8 @@ export default function App() {
               myColor={multiplayerRole === 'host' ? 'red' : 'blue'}
               opponentName={multiplayerOpponent}
               tournamentMatch={activeTournamentMatch}
+              equippedCosmetics={cosmetics?.equipped}
+              lang={lang}
             />
           ) : isWatchingTv ? (
             <WatchView onBack={() => setIsWatchingTv(false)} />
@@ -877,20 +918,23 @@ export default function App() {
 
               {activeTab === 'more' && (
                 <div className="flex flex-col gap-2">
-                  <h2 className="text-xl font-bold mb-2">More Options</h2>
+                  <h2 className="text-xl font-bold mb-2">{t('more_options', lang)}</h2>
                   {[
-                    { name: '8-Player Knockout Cup', icon: Crown, action: () => setShowTournamentModal(true) },
-                    { name: 'Daily Quests & Pass', icon: Target, action: () => setShowQuestsModal(true) },
-                    { name: 'Customize Profile', icon: User, action: () => setShowProfileEditModal(true) },
-                    { name: 'Direct Messages', icon: MessageSquare, action: () => setShowMessagesModal(true) },
-                    { name: 'Trophies & Badges', icon: Trophy, action: () => setShowAchievementsModal(true) },
-                    { name: 'Friends & Challenges', icon: Users, action: () => setShowFriendsModal(true) },
-                    { name: 'Board & Pawn Themes', icon: Palette, action: () => setShowThemeModal(true) },
-                    { name: 'Sound & Haptic Settings', icon: Sliders, action: () => setShowSettingsModal(true) },
-                    { name: 'How to play', icon: BookOpen, action: () => setShowHowToPlayModal(true) },
-                    { name: 'Barricade TV', icon: Tv, action: () => setIsWatchingTv(true) },
-                    { name: 'Daily Puzzles', icon: Puzzle, action: () => setActiveTab('puzzles') },
-                    { name: 'Install App (PWA)', icon: Download, action: handleInstallApp },
+                    { name: t('store_title', lang), icon: ShoppingBag, action: () => setShowStoreModal(true) },
+                    { name: t('language', lang) + (lang === 'en' ? ' (English 🇬🇧)' : ' (हिन्दी 🇮🇳)'), icon: Globe, action: handleToggleLanguage },
+                    { name: t('app_tour', lang), icon: HelpCircle, action: () => { setTourStep(1); setShowTour(true); } },
+                    { name: t('tournament_title', lang), icon: Crown, action: () => setShowTournamentModal(true) },
+                    { name: t('daily_quests_option', lang), icon: Target, action: () => setShowQuestsModal(true) },
+                    { name: t('customize_profile', lang), icon: User, action: () => setShowProfileEditModal(true) },
+                    { name: t('messages', lang), icon: MessageSquare, action: () => setShowMessagesModal(true) },
+                    { name: t('trophies_badges', lang), icon: Trophy, action: () => setShowAchievementsModal(true) },
+                    { name: t('friends_challenges', lang), icon: Users, action: () => setShowFriendsModal(true) },
+                    { name: t('board_themes', lang), icon: Palette, action: () => setShowThemeModal(true) },
+                    { name: t('sound_settings', lang), icon: Sliders, action: () => setShowSettingsModal(true) },
+                    { name: t('how_to_play', lang), icon: BookOpen, action: () => setShowHowToPlayModal(true) },
+                    { name: t('barricade_tv', lang), icon: Tv, action: () => setIsWatchingTv(true) },
+                    { name: t('daily_puzzles', lang), icon: Puzzle, action: () => setActiveTab('puzzles') },
+                    { name: t('install_app', lang), icon: Download, action: handleInstallApp },
                   ].map((item) => (
                     <button
                       key={item.name}
@@ -1054,7 +1098,7 @@ export default function App() {
               }`}
             >
               <LayoutGrid size={18} />
-              <span>Play</span>
+              <span>{t('nav_play', lang)}</span>
             </button>
             <button
               onClick={() => setActiveTab('puzzles')}
@@ -1063,7 +1107,7 @@ export default function App() {
               }`}
             >
               <Puzzle size={18} />
-              <span>Puzzles</span>
+              <span>{t('nav_puzzles', lang)}</span>
             </button>
             <button
               onClick={() => setActiveTab('leaderboard')}
@@ -1072,7 +1116,7 @@ export default function App() {
               }`}
             >
               <Trophy size={18} />
-              <span>Leaderboard</span>
+              <span>{t('nav_leaderboard', lang)}</span>
             </button>
             <button
               onClick={() => setActiveTab('profile')}
@@ -1081,7 +1125,7 @@ export default function App() {
               }`}
             >
               <User size={18} />
-              <span>Profile</span>
+              <span>{t('nav_profile', lang)}</span>
             </button>
             <button
               onClick={() => setActiveTab('more')}
@@ -1090,7 +1134,7 @@ export default function App() {
               }`}
             >
               <Menu size={18} />
-              <span>More</span>
+              <span>{t('nav_more', lang)}</span>
             </button>
           </nav>
         )}
@@ -1166,6 +1210,114 @@ export default function App() {
             setTimeout(() => setToastMsg(''), 2500);
           }}
         />
+
+        {/* In-Game Store & Cosmetics Modal */}
+        <StoreModal
+          isOpen={showStoreModal}
+          onClose={() => setShowStoreModal(false)}
+          userStats={userStats}
+          onStatsUpdate={(s) => setUserStats(s)}
+          onCosmeticsUpdated={(c) => setCosmetics(c)}
+        />
+
+        {/* First-Time User Interactive Tour / Coach Marks */}
+        {showTour && (
+          <div className="fixed inset-0 bg-black/85 backdrop-blur-xs flex items-center justify-center z-50 p-4 animate-in fade-in duration-200 select-none">
+            <div className="w-full max-w-sm bg-cardDark border border-brandOrange/60 rounded-3xl p-5 flex flex-col gap-4 shadow-2xl relative">
+              <div className="flex items-center justify-between pb-2 border-b border-borderDark/60">
+                <div className="flex items-center gap-2">
+                  <Sparkles className="text-brandOrange" size={20} />
+                  <div>
+                    <h3 className="text-sm font-bold text-white">Barricade Quick Tour</h3>
+                    <p className="text-[10px] text-gray-400">Step {tourStep} of 3</p>
+                  </div>
+                </div>
+                <button
+                  onClick={handleFinishTour}
+                  className="p-1 hover:bg-borderDark/60 rounded-lg text-gray-400 hover:text-white transition cursor-pointer"
+                >
+                  <X size={18} />
+                </button>
+              </div>
+
+              {tourStep === 1 && (
+                <div className="flex flex-col gap-2">
+                  <div className="w-12 h-12 rounded-2xl bg-brandGreen/20 border border-brandGreen/40 flex items-center justify-center text-brandGreen mx-auto mb-1">
+                    <Play size={24} className="fill-green-400" />
+                  </div>
+                  <h4 className="text-sm font-bold text-center text-gray-100">Quick Ranked Matchmaking</h4>
+                  <p className="text-xs text-center text-gray-400 leading-relaxed">
+                    Pick your blitz or rapid clock (1, 3, 5, or 10 mins). Hit "Play Ranked" to match with players by skill rating!
+                  </p>
+                </div>
+              )}
+
+              {tourStep === 2 && (
+                <div className="flex flex-col gap-2">
+                  <div className="w-12 h-12 rounded-2xl bg-amber-500/20 border border-amber-500/40 flex items-center justify-center text-brandOrange mx-auto mb-1">
+                    <Crown size={24} />
+                  </div>
+                  <h4 className="text-sm font-bold text-center text-gray-100">Multiple Thrilling Game Modes</h4>
+                  <p className="text-xs text-center text-gray-400 leading-relaxed">
+                    Fight in the 8-Player Knockout Cup, race to the centre in 4-Player King of the Hill, solve daily tactical puzzles, or practice against smart AI bots.
+                  </p>
+                </div>
+              )}
+
+              {tourStep === 3 && (
+                <div className="flex flex-col gap-2">
+                  <div className="w-12 h-12 rounded-2xl bg-cyan-500/20 border border-cyan-500/40 flex items-center justify-center text-cyan-400 mx-auto mb-1">
+                    <ShoppingBag size={24} />
+                  </div>
+                  <h4 className="text-sm font-bold text-center text-gray-100">Quests, Gems & Shop Cosmetics</h4>
+                  <p className="text-xs text-center text-gray-400 leading-relaxed">
+                    Claim daily quest rewards to earn gems and XP. Unlock custom Fire & Neon pawn skins, Obsidian wall textures, and play 100% offline anytime!
+                  </p>
+                </div>
+              )}
+
+              {/* Tour Navigation Buttons */}
+              <div className="flex items-center justify-between gap-2 pt-2 border-t border-borderDark/60">
+                <button
+                  type="button"
+                  onClick={handleFinishTour}
+                  className="text-xs text-gray-400 hover:text-gray-200 px-2 py-1.5 transition cursor-pointer"
+                >
+                  Skip Tour
+                </button>
+
+                <div className="flex items-center gap-1.5">
+                  {tourStep > 1 && (
+                    <button
+                      type="button"
+                      onClick={() => setTourStep((s) => s - 1)}
+                      className="bg-cardDark border border-borderDark text-gray-200 hover:text-white px-3 py-1.5 rounded-xl text-xs font-semibold transition cursor-pointer"
+                    >
+                      Back
+                    </button>
+                  )}
+                  {tourStep < 3 ? (
+                    <button
+                      type="button"
+                      onClick={() => setTourStep((s) => s + 1)}
+                      className="bg-brandOrange hover:bg-amber-600 text-black px-4 py-1.5 rounded-xl text-xs font-bold transition cursor-pointer shadow-sm"
+                    >
+                      Next
+                    </button>
+                  ) : (
+                    <button
+                      type="button"
+                      onClick={handleFinishTour}
+                      className="bg-green-500 hover:bg-green-400 text-black px-4 py-1.5 rounded-xl text-xs font-bold transition cursor-pointer shadow-sm"
+                    >
+                      Got it, Let's Play!
+                    </button>
+                  )}
+                </div>
+              </div>
+            </div>
+          </div>
+        )}
 
         {/* Match Detail Bottom Sheet / Modal */}
         {selectedProfileMatch && (
