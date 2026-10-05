@@ -24,7 +24,10 @@ import {
   BookOpen,
   Sliders,
   Swords,
-  Radio
+  Radio,
+  MessageSquare,
+  Award,
+  Download
 } from 'lucide-react';
 import GameBoard from './components/GameBoard';
 import PuzzlesView from './components/PuzzlesView';
@@ -35,10 +38,13 @@ import HowToPlayModal from './components/HowToPlayModal';
 import SettingsModal from './components/SettingsModal';
 import AnalysisBoard from './components/AnalysisBoard';
 import FriendsModal from './components/FriendsModal';
+import MessagesModal from './components/MessagesModal';
+import AchievementsModal from './components/AchievementsModal';
 import { getStoredStats } from './utils/stats';
 import { getStoredTheme } from './utils/themes';
 import { getStoredSettings } from './utils/settings';
 import { initHost, joinRoom } from './utils/multiplayer';
+import { getAchievementsList } from './utils/achievements';
 
 export default function App() {
   const [activeTab, setActiveTab] = useState('play');
@@ -94,6 +100,14 @@ export default function App() {
   const [multiplayerStatus, setMultiplayerStatus] = useState('idle'); // 'waiting-for-player' | 'connected' | 'disconnected'
   const [multiplayerOpponent, setMultiplayerOpponent] = useState('');
   const [showFriendsModal, setShowFriendsModal] = useState(false);
+
+  // Direct Messages & Achievements state
+  const [showMessagesModal, setShowMessagesModal] = useState(false);
+  const [showAchievementsModal, setShowAchievementsModal] = useState(false);
+
+  // In-App PWA Install Banner state
+  const [deferredPrompt, setDeferredPrompt] = useState(null);
+  const [showInstallBanner, setShowInstallBanner] = useState(false);
 
   // Click outside to close dropdown
   useEffect(() => {
@@ -261,6 +275,70 @@ export default function App() {
     setTimeout(() => setToastMsg(''), 3500);
   };
 
+  // PWA Install Prompt Listener
+  useEffect(() => {
+    const handleBeforeInstall = (e) => {
+      e.preventDefault();
+      setDeferredPrompt(e);
+      setShowInstallBanner(true);
+    };
+    window.addEventListener('beforeinstallprompt', handleBeforeInstall);
+    return () => window.removeEventListener('beforeinstallprompt', handleBeforeInstall);
+  }, []);
+
+  const handleInstallApp = async () => {
+    if (deferredPrompt) {
+      deferredPrompt.prompt();
+      const { outcome } = await deferredPrompt.userChoice;
+      if (outcome === 'accepted') {
+        setShowInstallBanner(false);
+        setToastMsg('Barricade app installed successfully! 🎉');
+        setTimeout(() => setToastMsg(''), 2500);
+      }
+      setDeferredPrompt(null);
+    } else {
+      setToastMsg('Tap browser menu (⋮ or Share) -> "Install App" / "Add to Home Screen"');
+      setTimeout(() => setToastMsg(''), 3500);
+    }
+  };
+
+  // Direct Messages challenge handlers
+  const handleLaunchChallengeFromDM = (code, friendName) => {
+    setRoomCode(code);
+    setShowCreateRoomModal(true);
+    setToastMsg(`Challenged ${friendName}! Waiting for connection...`);
+    setTimeout(() => setToastMsg(''), 3500);
+
+    if (multiplayerSession) {
+      multiplayerSession.close();
+    }
+
+    const session = initHost({
+      roomCode: code,
+      onConnect: () => {
+        setToastMsg(`${friendName} connected! Launching match...`);
+        setMultiplayerRole('host');
+        setMultiplayerOpponent(friendName);
+        setGameMode('multiplayer');
+        setTimeout(() => {
+          setShowCreateRoomModal(false);
+          setInGame(true);
+        }, 800);
+      },
+      onStatus: (status) => setMultiplayerStatus(status),
+      onError: () => {
+        setToastMsg('P2P connection error. Try again.');
+        setTimeout(() => setToastMsg(''), 3000);
+      },
+    });
+    setMultiplayerSession(session);
+  };
+
+  const handleJoinRoomFromDM = (code) => {
+    setInputRoomCode(code);
+    setShowJoinRoomModal(true);
+  };
+
   const winRate =
     userStats.games > 0
       ? Math.round((userStats.wins / userStats.games) * 100)
@@ -292,6 +370,15 @@ export default function App() {
                 <Palette size={14} className="text-brandOrange" />
                 <span className="hidden sm:inline text-[11px]">Theme</span>
               </button>
+              <button
+                type="button"
+                onClick={() => setShowMessagesModal(true)}
+                className="relative p-1.5 bg-cardDark hover:bg-borderDark/60 rounded-full border border-borderDark text-gray-300 hover:text-white transition cursor-pointer"
+                title="Direct Messages"
+              >
+                <MessageSquare size={14} className="text-brandOrange" />
+                <span className="absolute -top-0.5 -right-0.5 w-2 h-2 rounded-full bg-brandOrange animate-pulse" />
+              </button>
               <div className="flex items-center gap-1 bg-cardDark px-2 py-1 rounded-full border border-borderDark text-xs">
                 <Gem className="text-cyan-400" size={14} />
               </div>
@@ -305,6 +392,35 @@ export default function App() {
               </div>
             </div>
           </header>
+        )}
+
+        {/* In-App PWA Install Banner */}
+        {showInstallBanner && !inGame && !isWatchingTv && !inKingOfTheHill && !analyzingMatch && (
+          <div className="bg-gradient-to-r from-amber-500/15 via-cardDark to-cardDark border border-brandOrange/40 rounded-2xl p-3 mx-4 mt-3 flex items-center justify-between shadow-lg animate-in slide-in-from-top duration-200">
+            <div className="flex items-center gap-2.5">
+              <div className="w-8 h-8 rounded-xl bg-brandOrange/20 border border-brandOrange/40 flex items-center justify-center text-brandOrange">
+                <Download size={16} />
+              </div>
+              <div>
+                <h4 className="text-xs font-bold text-white">Install Barricade App</h4>
+                <p className="text-[10px] text-gray-400">Play fullscreen with zero lag & instant P2P</p>
+              </div>
+            </div>
+            <div className="flex items-center gap-1.5">
+              <button
+                onClick={handleInstallApp}
+                className="bg-brandOrange hover:bg-amber-600 text-black font-bold text-xs px-3 py-1.5 rounded-xl transition cursor-pointer shadow-sm active:scale-95"
+              >
+                Install
+              </button>
+              <button
+                onClick={() => setShowInstallBanner(false)}
+                className="p-1 text-gray-400 hover:text-white transition cursor-pointer"
+              >
+                <X size={15} />
+              </button>
+            </div>
+          </div>
         )}
 
         {/* Dynamic Views */}
@@ -585,6 +701,28 @@ export default function App() {
                     <div><div className="text-xs text-gray-400">Win Rate</div><div className="text-sm font-bold mt-0.5">{winRate}%</div></div>
                   </div>
 
+                  {/* Trophies & Badges Banner Row */}
+                  <div
+                    onClick={() => setShowAchievementsModal(true)}
+                    className="bg-gradient-to-r from-amber-500/10 via-cardDark to-cardDark border border-amber-500/30 hover:border-brandOrange p-3 rounded-xl flex items-center justify-between transition cursor-pointer"
+                  >
+                    <div className="flex items-center gap-2.5">
+                      <div className="w-8 h-8 rounded-lg bg-amber-500/20 border border-amber-500/40 flex items-center justify-center text-brandOrange">
+                        <Trophy size={16} />
+                      </div>
+                      <div>
+                        <div className="text-xs font-bold text-gray-200">Trophies & Badges</div>
+                        <div className="text-[10px] text-gray-400">
+                          {getAchievementsList().filter((a) => a.unlocked).length} / {getAchievementsList().length} unlocked · Tap to view
+                        </div>
+                      </div>
+                    </div>
+                    <div className="flex items-center gap-1 text-xs text-brandOrange font-bold">
+                      <span>View</span>
+                      <ChevronRight size={14} />
+                    </div>
+                  </div>
+
                   {/* Match History */}
                   <div className="flex flex-col gap-2 mt-2">
                     <div className="flex items-center justify-between">
@@ -630,12 +768,15 @@ export default function App() {
                 <div className="flex flex-col gap-2">
                   <h2 className="text-xl font-bold mb-2">More Options</h2>
                   {[
+                    { name: 'Direct Messages', icon: MessageSquare, action: () => setShowMessagesModal(true) },
+                    { name: 'Trophies & Badges', icon: Trophy, action: () => setShowAchievementsModal(true) },
                     { name: 'Friends & Challenges', icon: Users, action: () => setShowFriendsModal(true) },
                     { name: 'Board & Pawn Themes', icon: Palette, action: () => setShowThemeModal(true) },
                     { name: 'Sound & Haptic Settings', icon: Sliders, action: () => setShowSettingsModal(true) },
                     { name: 'How to play', icon: BookOpen, action: () => setShowHowToPlayModal(true) },
                     { name: 'Barricade TV', icon: Tv, action: () => setIsWatchingTv(true) },
                     { name: 'Daily Puzzles', icon: Puzzle, action: () => setActiveTab('puzzles') },
+                    { name: 'Install App (PWA)', icon: Download, action: handleInstallApp },
                   ].map((item) => (
                     <button
                       key={item.name}
@@ -867,6 +1008,20 @@ export default function App() {
           isOpen={showFriendsModal}
           onClose={() => setShowFriendsModal(false)}
           onChallengeFriend={handleChallengeFriend}
+        />
+
+        {/* Direct Messages Inbox Modal */}
+        <MessagesModal
+          isOpen={showMessagesModal}
+          onClose={() => setShowMessagesModal(false)}
+          onLaunchChallenge={handleLaunchChallengeFromDM}
+          onJoinRoom={handleJoinRoomFromDM}
+        />
+
+        {/* Trophies & Badges Modal */}
+        <AchievementsModal
+          isOpen={showAchievementsModal}
+          onClose={() => setShowAchievementsModal(false)}
         />
 
         {/* Match Detail Bottom Sheet / Modal */}

@@ -22,6 +22,7 @@ import { getStoredStats, recordMatchOutcome } from '../utils/stats';
 import { getStoredTheme } from '../utils/themes';
 import { getStoredSettings } from '../utils/settings';
 import { hapticMove, hapticWall, hapticError, hapticVictory } from '../utils/haptics';
+import { checkMatchAchievements } from '../utils/achievements';
 import ChatModal from './ChatModal';
 
 // ───────────────── PROCEDURAL WEB AUDIO SYNTHESIZER ─────────────────
@@ -245,6 +246,10 @@ export default function GameBoard({
   // Double tap confirmation states
   const [confirmResign, setConfirmResign] = useState(false);
   const [confirmBack, setConfirmBack] = useState(false);
+
+  // Match stats refs for achievements
+  const matchStartTimeRef = useRef(Date.now());
+  const wallsPlacedInMatchRef = useRef(0);
 
   // Push snapshot to undo stack
   const pushUndoSnapshot = () => {
@@ -486,6 +491,22 @@ export default function GameBoard({
     });
     setUserStats(updated);
     if (onStatsUpdate) onStatsUpdate(updated);
+
+    // Evaluate match achievements & notify
+    const durationSeconds = Math.round((Date.now() - matchStartTimeRef.current) / 1000);
+    checkMatchAchievements(
+      {
+        isWin: result.isYouWin,
+        durationSeconds,
+        wallsPlacedInMatch: wallsPlacedInMatchRef.current,
+        gameMode,
+        aiDifficulty,
+        currentStreak: updated.streak,
+      },
+      (achievement) => {
+        setWarningMsg(`🏆 Achievement Unlocked: ${achievement.title}!`);
+      }
+    );
   };
 
   // Play result sound when game ends
@@ -995,6 +1016,7 @@ export default function GameBoard({
     }
 
     pushUndoSnapshot();
+    wallsPlacedInMatchRef.current += 1;
     setWalls(testWalls);
     playAudio('wall');
 
@@ -1062,8 +1084,72 @@ export default function GameBoard({
     }
   };
 
+  // 🎮 DESKTOP KEYBOARD CONTROLS (Arrow keys, WASD, Space/R, Escape)
+  useEffect(() => {
+    const handleKeyDown = (e) => {
+      // Ignore if typing in input, chat is open, or game ended
+      if (isChatOpen || gameResult) return;
+      if (['INPUT', 'TEXTAREA'].includes(document.activeElement?.tagName)) return;
+
+      // Turn gating
+      if (gameMode === 'ai' && turn === 'blue') return;
+      if (gameMode === 'multiplayer' && turn !== myColor) return;
+
+      const key = e.key;
+      const current = turn === 'red' ? redPos : bluePos;
+      const other = turn === 'red' ? bluePos : redPos;
+      const valid = getValidMoves(current, other);
+
+      if (key === 'ArrowUp' || key === 'w' || key === 'W') {
+        e.preventDefault();
+        const move = valid.filter((m) => m.r < current.r).sort((a, b) => a.r - b.r)[0];
+        if (move) handleCellClick(move.r, move.c);
+      } else if (key === 'ArrowDown' || key === 's' || key === 'S') {
+        e.preventDefault();
+        const move = valid.filter((m) => m.r > current.r).sort((a, b) => b.r - a.r)[0];
+        if (move) handleCellClick(move.r, move.c);
+      } else if (key === 'ArrowLeft' || key === 'a' || key === 'A') {
+        e.preventDefault();
+        const move = valid.filter((m) => m.c < current.c).sort((a, b) => a.c - b.c)[0];
+        if (move) handleCellClick(move.r, move.c);
+      } else if (key === 'ArrowRight' || key === 'd' || key === 'D') {
+        e.preventDefault();
+        const move = valid.filter((m) => m.c > current.c).sort((a, b) => b.c - a.c)[0];
+        if (move) handleCellClick(move.r, move.c);
+      } else if (key === ' ' || key === 'r' || key === 'R') {
+        e.preventDefault();
+        if (turn === 'red') {
+          setRedOrientation((prev) => (prev === 'h' ? 'v' : 'h'));
+        } else {
+          setBlueOrientation((prev) => (prev === 'h' ? 'v' : 'h'));
+        }
+        playAudio('move');
+      } else if (key === 'Escape') {
+        e.preventDefault();
+        handleBackClick();
+      }
+    };
+
+    window.addEventListener('keydown', handleKeyDown);
+    return () => window.removeEventListener('keydown', handleKeyDown);
+  }, [
+    isChatOpen,
+    gameResult,
+    gameMode,
+    turn,
+    myColor,
+    redPos,
+    bluePos,
+    walls,
+    redWalls,
+    blueWalls,
+    confirmBack,
+  ]);
+
   const restartGame = () => {
     const freshSeconds = (gameMinutes || 3) * 60;
+    matchStartTimeRef.current = Date.now();
+    wallsPlacedInMatchRef.current = 0;
     setRedPos({ r: 8, c: 4 });
     setBluePos({ r: 0, c: 4 });
     setRedWalls(10);

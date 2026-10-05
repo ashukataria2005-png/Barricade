@@ -12,6 +12,7 @@ import {
 } from 'lucide-react';
 import { getStoredStats, recordPuzzleSolved } from '../utils/stats';
 import { getStoredTheme } from '../utils/themes';
+import { updateAchievementStats } from '../utils/achievements';
 
 const PUZZLES = [
   {
@@ -119,9 +120,11 @@ export default function PuzzlesView({ onPuzzleCompleted, theme }) {
 
   const handlePuzzleSolved = () => {
     setPuzzleStatus('solved');
-    setSolvedPuzzles((prev) => new Set(prev).add(activePuzzleIndex));
+    const newSolved = new Set(solvedPuzzles).add(activePuzzleIndex);
+    setSolvedPuzzles(newSolved);
     const updated = recordPuzzleSolved(15);
     setStats(updated);
+    updateAchievementStats({ puzzleCount: newSolved.size });
     if (onPuzzleCompleted) onPuzzleCompleted(updated);
   };
 
