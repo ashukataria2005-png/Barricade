@@ -15,10 +15,13 @@ import {
   Volume2,
   VolumeX,
   History,
-  Undo2
+  Undo2,
+  Sliders
 } from 'lucide-react';
 import { getStoredStats, recordMatchOutcome } from '../utils/stats';
 import { getStoredTheme } from '../utils/themes';
+import { getStoredSettings } from '../utils/settings';
+import { hapticMove, hapticWall, hapticError, hapticVictory } from '../utils/haptics';
 import ChatModal from './ChatModal';
 
 // ───────────────── PROCEDURAL WEB AUDIO SYNTHESIZER ─────────────────
@@ -38,7 +41,7 @@ const getAudioContext = () => {
   return audioCtx;
 };
 
-const playMoveSound = (ctx) => {
+const playMoveSound = (ctx, vol = 0.8) => {
   const now = ctx.currentTime;
   const osc = ctx.createOscillator();
   const gain = ctx.createGain();
@@ -47,7 +50,7 @@ const playMoveSound = (ctx) => {
   osc.frequency.setValueAtTime(440, now);
   osc.frequency.exponentialRampToValueAtTime(120, now + 0.05);
 
-  gain.gain.setValueAtTime(0.35, now);
+  gain.gain.setValueAtTime(0.35 * vol, now);
   gain.gain.exponentialRampToValueAtTime(0.001, now + 0.05);
 
   osc.connect(gain);
@@ -57,7 +60,7 @@ const playMoveSound = (ctx) => {
   osc.stop(now + 0.055);
 };
 
-const playWallSound = (ctx) => {
+const playWallSound = (ctx, vol = 0.8) => {
   const now = ctx.currentTime;
 
   const osc = ctx.createOscillator();
@@ -66,7 +69,7 @@ const playWallSound = (ctx) => {
   osc.frequency.setValueAtTime(180, now);
   osc.frequency.exponentialRampToValueAtTime(40, now + 0.11);
 
-  gain.gain.setValueAtTime(0.45, now);
+  gain.gain.setValueAtTime(0.45 * vol, now);
   gain.gain.exponentialRampToValueAtTime(0.001, now + 0.11);
 
   osc.connect(gain);
@@ -87,7 +90,7 @@ const playWallSound = (ctx) => {
     filter.type = 'bandpass';
     filter.frequency.value = 320;
     const noiseGain = ctx.createGain();
-    noiseGain.gain.setValueAtTime(0.4, now);
+    noiseGain.gain.setValueAtTime(0.4 * vol, now);
     noiseGain.gain.exponentialRampToValueAtTime(0.001, now + 0.045);
 
     noise.connect(filter);
@@ -97,7 +100,7 @@ const playWallSound = (ctx) => {
   } catch (e) {}
 };
 
-const playInvalidSound = (ctx) => {
+const playInvalidSound = (ctx, vol = 0.8) => {
   const now = ctx.currentTime;
   [0, 0.075].forEach((delay) => {
     const osc = ctx.createOscillator();
@@ -106,7 +109,7 @@ const playInvalidSound = (ctx) => {
     osc.frequency.setValueAtTime(140, now + delay);
     osc.frequency.setValueAtTime(100, now + delay + 0.045);
 
-    gain.gain.setValueAtTime(0.18, now + delay);
+    gain.gain.setValueAtTime(0.18 * vol, now + delay);
     gain.gain.exponentialRampToValueAtTime(0.001, now + delay + 0.05);
 
     osc.connect(gain);
@@ -116,7 +119,7 @@ const playInvalidSound = (ctx) => {
   });
 };
 
-const playWinSound = (ctx) => {
+const playWinSound = (ctx, vol = 0.8) => {
   const now = ctx.currentTime;
   const notes = [440, 554.37, 659.25, 880];
   notes.forEach((freq, idx) => {
@@ -126,7 +129,7 @@ const playWinSound = (ctx) => {
     osc.type = 'sine';
     osc.frequency.setValueAtTime(freq, start);
 
-    gain.gain.setValueAtTime(0.25, start);
+    gain.gain.setValueAtTime(0.25 * vol, start);
     gain.gain.exponentialRampToValueAtTime(0.001, start + 0.3);
 
     osc.connect(gain);
@@ -136,7 +139,7 @@ const playWinSound = (ctx) => {
   });
 };
 
-const playLossSound = (ctx) => {
+const playLossSound = (ctx, vol = 0.8) => {
   const now = ctx.currentTime;
   const notes = [440, 392, 349.23, 293.66];
   notes.forEach((freq, idx) => {
@@ -146,7 +149,7 @@ const playLossSound = (ctx) => {
     osc.type = 'triangle';
     osc.frequency.setValueAtTime(freq, start);
 
-    gain.gain.setValueAtTime(0.22, start);
+    gain.gain.setValueAtTime(0.22 * vol, start);
     gain.gain.exponentialRampToValueAtTime(0.001, start + 0.22);
 
     osc.connect(gain);
@@ -164,6 +167,8 @@ export default function GameBoard({
   theme,
   onBack,
   onStatsUpdate,
+  onAnalyze,
+  onOpenSettings,
 }) {
   const activeTheme = theme || getStoredTheme();
   const initialSeconds = (gameMinutes || 3) * 60;
@@ -215,6 +220,21 @@ export default function GameBoard({
   // Move Undo History Stack (for local & practice games)
   const [undoStack, setUndoStack] = useState([]);
 
+  // Full Game Review Snapshots
+  const [gameSnapshots, setGameSnapshots] = useState([
+    {
+      moveIdx: 0,
+      player: null,
+      type: 'start',
+      notation: 'Start',
+      redPos: { r: 8, c: 4 },
+      bluePos: { r: 0, c: 4 },
+      walls: [],
+      redWalls: 10,
+      blueWalls: 10,
+    },
+  ]);
+
   // AI thinking state
   const [isAiThinking, setIsAiThinking] = useState(false);
 
@@ -253,20 +273,34 @@ export default function GameBoard({
     setRedWalls(targetSnapshot.redWalls);
     setBlueWalls(targetSnapshot.blueWalls);
     setMoveHistory(targetSnapshot.moveHistory);
+    setGameSnapshots((prev) =>
+      prev.slice(0, gameMode === 'ai' ? Math.max(1, prev.length - 2) : Math.max(1, prev.length - 1))
+    );
     playAudio('move');
   };
 
-  // Audio dispatcher
+  // Audio & Haptics dispatcher
   const playAudio = (type) => {
-    if (isMuted) return;
+    const settings = getStoredSettings();
+
+    // Trigger haptics alongside audio events
+    if (type === 'move') hapticMove();
+    else if (type === 'wall') hapticWall();
+    else if (type === 'invalid') hapticError();
+    else if (type === 'win') hapticVictory();
+    else if (type === 'loss') hapticError();
+
+    if (isMuted || !settings.sfxEnabled) return;
+
     try {
+      const vol = (settings.volume ?? 80) / 100;
       const ctx = getAudioContext();
       if (!ctx) return;
-      if (type === 'move') playMoveSound(ctx);
-      else if (type === 'wall') playWallSound(ctx);
-      else if (type === 'invalid') playInvalidSound(ctx);
-      else if (type === 'win') playWinSound(ctx);
-      else if (type === 'loss') playLossSound(ctx);
+      if (type === 'move') playMoveSound(ctx, vol);
+      else if (type === 'wall') playWallSound(ctx, vol);
+      else if (type === 'invalid') playInvalidSound(ctx, vol);
+      else if (type === 'win') playWinSound(ctx, vol);
+      else if (type === 'loss') playLossSound(ctx, vol);
     } catch (e) {}
   };
 
@@ -313,6 +347,8 @@ export default function GameBoard({
       opponent,
       eloDelta: result.eloDelta,
       movesCount: moveHistory.length + 1,
+      snapshots: gameSnapshots,
+      moveHistory,
     });
     setUserStats(updated);
     if (onStatsUpdate) onStatsUpdate(updated);
@@ -595,12 +631,28 @@ export default function GameBoard({
     }
 
     if (bestWall && maxGain > 0) {
-      setWalls((prev) => [...prev, bestWall]);
-      setBlueWalls((prev) => prev - 1);
+      const newWalls = [...walls, bestWall];
+      setWalls(newWalls);
+      const newBlueWalls = blueWalls - 1;
+      setBlueWalls(newBlueWalls);
       playAudio('wall');
 
       const notation = `${bestWall.orientation}${COLS[bestWall.c]}${8 - bestWall.r}`;
       setMoveHistory((prev) => [...prev, { player: 'blue', type: 'wall', notation }]);
+      setGameSnapshots((prev) => [
+        ...prev,
+        {
+          moveIdx: prev.length,
+          player: 'blue',
+          type: 'wall',
+          notation,
+          redPos: { ...redPos },
+          bluePos: { ...bluePos },
+          walls: newWalls,
+          redWalls,
+          blueWalls: newBlueWalls,
+        },
+      ]);
 
       setTurn('red');
       return;
@@ -645,6 +697,20 @@ export default function GameBoard({
       playAudio('move');
       const notation = `${COLS[bestMove.c]}${9 - bestMove.r}`;
       setMoveHistory((prev) => [...prev, { player: 'blue', type: 'pawn', notation }]);
+      setGameSnapshots((prev) => [
+        ...prev,
+        {
+          moveIdx: prev.length,
+          player: 'blue',
+          type: 'pawn',
+          notation,
+          redPos: { ...redPos },
+          bluePos: bestMove,
+          walls: [...walls],
+          redWalls,
+          blueWalls,
+        },
+      ]);
 
       if (bestMove.r === 8) {
         triggerGameEnd({
@@ -689,7 +755,23 @@ export default function GameBoard({
       setMoveHistory((prev) => [...prev, { player: turn, type: 'pawn', notation }]);
 
       if (turn === 'red') {
-        setRedPos({ r, c });
+        const newRed = { r, c };
+        setRedPos(newRed);
+        setGameSnapshots((prev) => [
+          ...prev,
+          {
+            moveIdx: prev.length,
+            player: 'red',
+            type: 'pawn',
+            notation,
+            redPos: newRed,
+            bluePos: { ...bluePos },
+            walls: [...walls],
+            redWalls,
+            blueWalls,
+          },
+        ]);
+
         if (r === 0) {
           triggerGameEnd({
             winner: 'red',
@@ -701,7 +783,23 @@ export default function GameBoard({
           setTurn('blue');
         }
       } else {
-        setBluePos({ r, c });
+        const newBlue = { r, c };
+        setBluePos(newBlue);
+        setGameSnapshots((prev) => [
+          ...prev,
+          {
+            moveIdx: prev.length,
+            player: 'blue',
+            type: 'pawn',
+            notation,
+            redPos: { ...redPos },
+            bluePos: newBlue,
+            walls: [...walls],
+            redWalls,
+            blueWalls,
+          },
+        ]);
+
         if (r === 8) {
           triggerGameEnd({
             winner: 'blue',
@@ -757,6 +855,20 @@ export default function GameBoard({
 
     const notation = `${activeOrientation}${COLS[c]}${8 - r}`;
     setMoveHistory((prev) => [...prev, { player: turn, type: 'wall', notation }]);
+    setGameSnapshots((prev) => [
+      ...prev,
+      {
+        moveIdx: prev.length,
+        player: turn,
+        type: 'wall',
+        notation,
+        redPos: { ...redPos },
+        bluePos: { ...bluePos },
+        walls: testWalls,
+        redWalls: isRed ? redWalls - 1 : redWalls,
+        blueWalls: isRed ? blueWalls : blueWalls - 1,
+      },
+    ]);
 
     if (isRed) {
       setRedWalls((prev) => prev - 1);
@@ -806,6 +918,19 @@ export default function GameBoard({
     setIsAiThinking(false);
     setMoveHistory([]);
     setUndoStack([]);
+    setGameSnapshots([
+      {
+        moveIdx: 0,
+        player: null,
+        type: 'start',
+        notation: 'Start',
+        redPos: { r: 8, c: 4 },
+        bluePos: { r: 0, c: 4 },
+        walls: [],
+        redWalls: 10,
+        blueWalls: 10,
+      },
+    ]);
   };
 
   const currentPos = turn === 'red' ? redPos : bluePos;
@@ -871,6 +996,18 @@ export default function GameBoard({
             >
               {isMuted ? <VolumeX size={15} /> : <Volume2 size={15} />}
             </button>
+
+            {/* Sound & Haptic Settings Drawer */}
+            {onOpenSettings && (
+              <button
+                type="button"
+                onClick={onOpenSettings}
+                className="p-1.5 rounded-lg border text-xs font-semibold bg-cardDark text-gray-400 hover:text-white border-borderDark hover:bg-borderDark transition cursor-pointer"
+                title="Audio & Haptic Settings"
+              >
+                <Sliders size={15} />
+              </button>
+            )}
 
             {/* In-Game Chat Toggle */}
             <button
@@ -1298,8 +1435,25 @@ export default function GameBoard({
             <div className="grid grid-cols-2 gap-3 w-full mb-3">
               <button
                 type="button"
-                onClick={restartGame}
-                className="bg-[#2c2c2e] hover:bg-[#3a3a3c] text-white font-semibold py-2.5 rounded-xl text-xs transition cursor-pointer"
+                onClick={() => {
+                  if (onAnalyze) {
+                    onAnalyze({
+                      opponent:
+                        gameMode === 'ai'
+                          ? `StockBot [${aiDifficulty.toUpperCase()}]`
+                          : gameMode === 'friend'
+                          ? 'Friend (Room)'
+                          : 'kamal47 (1188)',
+                      result: gameResult.isYouWin ? 'win' : 'loss',
+                      eloChange: gameResult.eloDelta >= 0 ? `+${gameResult.eloDelta}` : `${gameResult.eloDelta}`,
+                      date: 'Just now',
+                      movesCount: moveHistory.length,
+                      snapshots: gameSnapshots,
+                      moveHistory,
+                    });
+                  }
+                }}
+                className="bg-brandOrange hover:bg-amber-600 text-black font-bold py-2.5 rounded-xl text-xs transition cursor-pointer shadow-md"
               >
                 Analyze
               </button>

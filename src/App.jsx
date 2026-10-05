@@ -21,7 +21,8 @@ import {
   Link2,
   Share2,
   Palette,
-  BookOpen
+  BookOpen,
+  Sliders
 } from 'lucide-react';
 import GameBoard from './components/GameBoard';
 import PuzzlesView from './components/PuzzlesView';
@@ -29,8 +30,11 @@ import WatchView from './components/WatchView';
 import KingOfTheHillBoard from './components/KingOfTheHillBoard';
 import ThemeModal from './components/ThemeModal';
 import HowToPlayModal from './components/HowToPlayModal';
+import SettingsModal from './components/SettingsModal';
+import AnalysisBoard from './components/AnalysisBoard';
 import { getStoredStats } from './utils/stats';
 import { getStoredTheme } from './utils/themes';
+import { getStoredSettings } from './utils/settings';
 
 export default function App() {
   const [activeTab, setActiveTab] = useState('play');
@@ -44,6 +48,16 @@ export default function App() {
   // Board & Pawn Theme state
   const [currentTheme, setCurrentTheme] = useState(() => getStoredTheme());
   const [showThemeModal, setShowThemeModal] = useState(false);
+
+  // Audio & Haptics Settings state
+  const [settings, setSettings] = useState(() => getStoredSettings());
+  const [showSettingsModal, setShowSettingsModal] = useState(false);
+
+  // Interactive Analysis state
+  const [analyzingMatch, setAnalyzingMatch] = useState(null);
+
+  // Profile match review bottom sheet
+  const [selectedProfileMatch, setSelectedProfileMatch] = useState(null);
 
   // How to Play Guide Modal
   const [showHowToPlayModal, setShowHowToPlayModal] = useState(false);
@@ -163,7 +177,7 @@ export default function App() {
         )}
 
         {/* Top Header */}
-        {!inGame && !isWatchingTv && !inKingOfTheHill && (
+        {!inGame && !isWatchingTv && !inKingOfTheHill && !analyzingMatch && (
           <header className="flex items-center justify-between px-4 py-3 bg-bgDark border-b border-borderDark/40">
             <h1 className="text-2xl font-black text-brandOrange tracking-wide">
               Barricade
@@ -195,7 +209,13 @@ export default function App() {
 
         {/* Dynamic Views */}
         <main className="flex-1 overflow-y-auto px-4 py-4">
-          {inKingOfTheHill ? (
+          {analyzingMatch ? (
+            <AnalysisBoard
+              matchData={analyzingMatch}
+              theme={currentTheme}
+              onBack={() => setAnalyzingMatch(null)}
+            />
+          ) : inKingOfTheHill ? (
             <KingOfTheHillBoard
               theme={currentTheme}
               onBack={() => setInKingOfTheHill(false)}
@@ -207,6 +227,8 @@ export default function App() {
               theme={currentTheme}
               onStatsUpdate={(updated) => setUserStats(updated)}
               onBack={() => setInGame(false)}
+              onAnalyze={(matchData) => setAnalyzingMatch(matchData)}
+              onOpenSettings={() => setShowSettingsModal(true)}
             />
           ) : isWatchingTv ? (
             <WatchView onBack={() => setIsWatchingTv(false)} />
@@ -446,29 +468,38 @@ export default function App() {
 
                   {/* Match History */}
                   <div className="flex flex-col gap-2 mt-2">
-                    <h3 className="text-sm font-bold text-gray-300">Recent Matches</h3>
+                    <div className="flex items-center justify-between">
+                      <h3 className="text-sm font-bold text-gray-300">Recent Matches</h3>
+                      <span className="text-[11px] text-gray-500">Tap to analyze</span>
+                    </div>
                     {(userStats.history || []).slice(0, 5).map((match, idx) => (
                       <div
                         key={idx}
-                        className="bg-cardDark border border-borderDark/50 p-3 rounded-xl flex items-center justify-between"
+                        onClick={() => setSelectedProfileMatch(match)}
+                        className="bg-cardDark border border-borderDark/50 hover:border-brandOrange/60 p-3 rounded-xl flex items-center justify-between transition cursor-pointer active:scale-[0.99] group"
                       >
                         <div>
-                          <div className="text-sm font-semibold text-gray-200">{match.opponent}</div>
+                          <div className="text-sm font-semibold text-gray-200 group-hover:text-brandOrange transition">
+                            {match.opponent}
+                          </div>
                           <div className="text-[10px] text-gray-400">{match.date} · {match.movesCount || 12} moves</div>
                         </div>
-                        <div className="text-right">
-                          <span
-                            className={`text-xs font-bold px-2 py-0.5 rounded-md ${
-                              match.result === 'win'
-                                ? 'bg-green-500/20 text-green-400 border border-green-500/40'
-                                : 'bg-red-500/20 text-red-400 border border-red-500/40'
-                            }`}
-                          >
-                            {match.result === 'win' ? 'Victory' : 'Defeat'}
-                          </span>
-                          <div className="text-xs font-mono font-semibold text-gray-400 mt-1">
-                            {match.eloChange}
+                        <div className="text-right flex items-center gap-2">
+                          <div>
+                            <span
+                              className={`text-xs font-bold px-2 py-0.5 rounded-md ${
+                                match.result === 'win'
+                                  ? 'bg-green-500/20 text-green-400 border border-green-500/40'
+                                  : 'bg-red-500/20 text-red-400 border border-red-500/40'
+                              }`}
+                            >
+                              {match.result === 'win' ? 'Victory' : 'Defeat'}
+                            </span>
+                            <div className="text-xs font-mono font-semibold text-gray-400 mt-1">
+                              {match.eloChange}
+                            </div>
                           </div>
+                          <ChevronRight size={14} className="text-gray-500 group-hover:text-brandOrange transition" />
                         </div>
                       </div>
                     ))}
@@ -481,6 +512,7 @@ export default function App() {
                   <h2 className="text-xl font-bold mb-2">More Options</h2>
                   {[
                     { name: 'Board & Pawn Themes', icon: Palette, action: () => setShowThemeModal(true) },
+                    { name: 'Sound & Haptic Settings', icon: Sliders, action: () => setShowSettingsModal(true) },
                     { name: 'How to play', icon: BookOpen, action: () => setShowHowToPlayModal(true) },
                     { name: 'Barricade TV', icon: Tv, action: () => setIsWatchingTv(true) },
                     { name: 'Play with Friends', icon: Users, action: handleOpenCreateRoom },
@@ -617,7 +649,7 @@ export default function App() {
         )}
 
         {/* Bottom Navigation */}
-        {!inGame && !isWatchingTv && !inKingOfTheHill && (
+        {!inGame && !isWatchingTv && !inKingOfTheHill && !analyzingMatch && (
           <nav className="fixed bottom-0 left-0 right-0 max-w-md mx-auto bg-[#18181b] border-t border-borderDark/60 flex items-center justify-around py-2.5 z-40">
             <button
               onClick={() => setActiveTab('play')}
@@ -675,11 +707,81 @@ export default function App() {
           onSelectTheme={(th) => setCurrentTheme(th)}
         />
 
+        {/* Audio & Haptics Settings Modal */}
+        <SettingsModal
+          isOpen={showSettingsModal}
+          onClose={() => setShowSettingsModal(false)}
+          settings={settings}
+          onUpdateSettings={(newSettings) => setSettings(newSettings)}
+        />
+
         {/* Interactive How to Play Guide Modal */}
         <HowToPlayModal
           isOpen={showHowToPlayModal}
           onClose={() => setShowHowToPlayModal(false)}
         />
+
+        {/* Match Detail Bottom Sheet / Modal */}
+        {selectedProfileMatch && (
+          <div className="fixed inset-0 bg-black/80 backdrop-blur-xs flex items-center justify-center z-50 p-4 animate-in fade-in duration-150 select-none">
+            <div className="w-full max-w-sm bg-cardDark border border-borderDark rounded-3xl p-5 flex flex-col gap-4 shadow-2xl relative">
+              <div className="flex items-center justify-between pb-2 border-b border-borderDark/60">
+                <div className="flex items-center gap-2">
+                  <Trophy className="text-brandOrange" size={20} />
+                  <h3 className="text-base font-bold text-white">Match Overview</h3>
+                </div>
+                <button
+                  onClick={() => setSelectedProfileMatch(null)}
+                  className="p-1 hover:bg-borderDark/60 rounded-lg text-gray-400 hover:text-white transition cursor-pointer"
+                >
+                  <X size={18} />
+                </button>
+              </div>
+
+              <div className="bg-bgDark/70 border border-borderDark/60 rounded-2xl p-4 flex items-center justify-between">
+                <div>
+                  <h4 className="text-base font-bold text-gray-100">{selectedProfileMatch.opponent}</h4>
+                  <p className="text-xs text-gray-400 mt-0.5">{selectedProfileMatch.date} · {selectedProfileMatch.movesCount || 14} moves</p>
+                </div>
+                <div className="text-right">
+                  <span
+                    className={`text-xs font-bold px-2 py-0.5 rounded-md ${
+                      selectedProfileMatch.result === 'win'
+                        ? 'bg-green-500/20 text-green-400 border border-green-500/40'
+                        : 'bg-red-500/20 text-red-400 border border-red-500/40'
+                    }`}
+                  >
+                    {selectedProfileMatch.result === 'win' ? 'Victory' : 'Defeat'}
+                  </span>
+                  <div className="text-sm font-bold font-mono text-brandOrange mt-1">
+                    {selectedProfileMatch.eloChange} Elo
+                  </div>
+                </div>
+              </div>
+
+              <div className="flex flex-col gap-2 w-full pt-1">
+                <button
+                  type="button"
+                  onClick={() => {
+                    setAnalyzingMatch(selectedProfileMatch);
+                    setSelectedProfileMatch(null);
+                  }}
+                  className="w-full bg-brandOrange hover:bg-amber-600 text-black font-bold py-3 rounded-xl text-xs transition flex items-center justify-center gap-2 shadow-md cursor-pointer"
+                >
+                  <Play size={14} className="fill-black" />
+                  <span>Analyze Match (Interactive Review)</span>
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setSelectedProfileMatch(null)}
+                  className="w-full bg-cardDark border border-borderDark text-gray-400 py-2.5 rounded-xl text-xs hover:text-white transition cursor-pointer"
+                >
+                  Close
+                </button>
+              </div>
+            </div>
+          </div>
+        )}
       </div>
     </div>
   );

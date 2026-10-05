@@ -37,7 +37,14 @@ export const saveStoredStats = (stats) => {
   } catch (e) {}
 };
 
-export const recordMatchOutcome = ({ isWin, opponent = 'kamal47', eloDelta = 12, movesCount = 10 }) => {
+export const recordMatchOutcome = ({
+  isWin,
+  opponent = 'kamal47',
+  eloDelta = 12,
+  movesCount = 10,
+  snapshots = [],
+  moveHistory = [],
+}) => {
   const current = getStoredStats();
   const newElo = Math.max(100, current.elo + eloDelta);
   const newWins = isWin ? current.wins + 1 : current.wins;
@@ -51,6 +58,8 @@ export const recordMatchOutcome = ({ isWin, opponent = 'kamal47', eloDelta = 12,
     eloChange: eloDelta >= 0 ? `+${eloDelta}` : `${eloDelta}`,
     date: 'Just now',
     movesCount,
+    snapshots: snapshots.length > 0 ? snapshots : undefined,
+    moveHistory: moveHistory.length > 0 ? moveHistory : undefined,
   };
 
   const updated = {
