@@ -41,11 +41,17 @@ export const DEFAULT_STATS = {
   xp: 340,
   level: 3,
   gems: 150,
-  setsWon: 0,
+  setsWon: 1,
+  setsPlayed: 2,
+  diamondsFromSets: 1,
   games: 34,
   wins: 18,
   losses: 16,
   streak: 1,
+  setHistory: [
+    { id: 'set-1', opponent: 'kamal47 (1188)', score: '3-1', result: 'win', date: 'Oct 4, 2026', rewardDiamonds: 1 },
+    { id: 'set-2', opponent: 'The_dog (2301)', score: '1-3', result: 'loss', date: 'Oct 4, 2026', rewardDiamonds: 0 },
+  ],
   history: [
     { opponent: 'kamal47 (1188)', result: 'win', eloChange: '+12', date: 'Oct 4, 2026', movesCount: 14 },
     { opponent: 'The_dog (2301)', result: 'loss', eloChange: '-11', date: 'Oct 4, 2026', movesCount: 22 },
@@ -78,7 +84,10 @@ export const getStoredStats = () => {
       ...DEFAULT_STATS,
       ...parsed,
       gems: parsed.gems ?? 150,
-      setsWon: parsed.setsWon ?? 0,
+      setsWon: parsed.setsWon ?? 1,
+      setsPlayed: parsed.setsPlayed ?? 2,
+      diamondsFromSets: parsed.diamondsFromSets ?? 1,
+      setHistory: parsed.setHistory || DEFAULT_STATS.setHistory,
     };
   } catch (e) {
     return DEFAULT_STATS;
@@ -442,4 +451,151 @@ export const equipCosmeticItem = (category, itemId) => {
   };
   saveStoredCosmetics(updated);
   return updated;
+};
+
+// ───────────────── BEST-OF-3 SET HISTORY & OUTCOME ─────────────────
+
+export const recordSetOutcome = ({ opponent = 'Opponent', score = '3-1', isWin = true, rewardDiamonds = 1 }) => {
+  const current = getStoredStats();
+  const setRecord = {
+    id: `set-${Date.now()}`,
+    opponent,
+    score,
+    result: isWin ? 'win' : 'loss',
+    date: 'Just now',
+    rewardDiamonds: isWin ? rewardDiamonds : 0,
+  };
+
+  const newGems = isWin ? (current.gems || 0) + rewardDiamonds : (current.gems || 0);
+  const newSetsWon = isWin ? (current.setsWon || 0) + 1 : (current.setsWon || 0);
+  const newSetsPlayed = (current.setsPlayed || 0) + 1;
+  const newDiamondsFromSets = (current.diamondsFromSets || 0) + (isWin ? rewardDiamonds : 0);
+
+  const updated = {
+    ...current,
+    gems: newGems,
+    setsWon: newSetsWon,
+    setsPlayed: newSetsPlayed,
+    diamondsFromSets: newDiamondsFromSets,
+    setHistory: [setRecord, ...(current.setHistory || [])],
+  };
+
+  saveStoredStats(updated);
+  return updated;
+};
+
+// ───────────────── AUTHENTICATION & WELCOME REWARDS ─────────────────
+
+const AUTH_KEY = 'barricade_auth_user';
+const ACCOUNTS_KEY = 'barricade_registered_accounts';
+
+export const getStoredAuthUser = () => {
+  if (typeof window === 'undefined') return null;
+  try {
+    const raw = localStorage.getItem(AUTH_KEY);
+    return raw ? JSON.parse(raw) : null;
+  } catch (e) {
+    return null;
+  }
+};
+
+export const registerUser = ({ username, password }) => {
+  if (typeof window === 'undefined') return null;
+  const cleanName = username.trim();
+  if (!cleanName) return { success: false, message: 'Username is required' };
+  if (!password || password.length < 4) {
+    return { success: false, message: 'Password must be at least 4 characters' };
+  }
+
+  try {
+    const accountsRaw = localStorage.getItem(ACCOUNTS_KEY);
+    const accounts = accountsRaw ? JSON.parse(accountsRaw) : [];
+
+    if (accounts.some((a) => a.username.toLowerCase() === cleanName.toLowerCase())) {
+      return { success: false, message: 'Username is already taken' };
+    }
+
+    const newAccount = {
+      username: cleanName,
+      password,
+      createdAt: new Date().toISOString(),
+    };
+
+    accounts.push(newAccount);
+    localStorage.setItem(ACCOUNTS_KEY, JSON.stringify(accounts));
+
+    // Save active auth session
+    localStorage.setItem(AUTH_KEY, JSON.stringify({ username: cleanName, isLoggedIn: true }));
+
+    // Initialize user stats with 1200 Starting Elo & 100 Free Diamonds Welcome Bonus!
+    const current = getStoredStats();
+    const newUserStats = {
+      ...current,
+      username: cleanName,
+      elo: 1200,
+      gems: (current.gems || 0) + 100, // 100 Free Diamonds Welcome Bonus!
+      games: 0,
+      wins: 0,
+      losses: 0,
+      streak: 0,
+      setsWon: 0,
+      setsPlayed: 0,
+      diamondsFromSets: 0,
+      history: [],
+      setHistory: [],
+    };
+    saveStoredStats(newUserStats);
+
+    return {
+      success: true,
+      message: `Welcome to Barricade, ${cleanName}! Claimed 100 Free Diamonds & 1200 Starting Elo! 💎`,
+      user: { username: cleanName },
+      userStats: newUserStats,
+      isWelcomeBonus: true,
+    };
+  } catch (e) {
+    return { success: false, message: 'Registration failed. Please try again.' };
+  }
+};
+
+export const loginUser = ({ username, password }) => {
+  if (typeof window === 'undefined') return null;
+  const cleanName = username.trim();
+  try {
+    const accountsRaw = localStorage.getItem(ACCOUNTS_KEY);
+    const accounts = accountsRaw ? JSON.parse(accountsRaw) : [];
+
+    const found = accounts.find(
+      (a) => a.username.toLowerCase() === cleanName.toLowerCase() && a.password === password
+    );
+
+    if (!found) {
+      return { success: false, message: 'Invalid username or password' };
+    }
+
+    localStorage.setItem(AUTH_KEY, JSON.stringify({ username: found.username, isLoggedIn: true }));
+
+    const current = getStoredStats();
+    const updated = {
+      ...current,
+      username: found.username,
+    };
+    saveStoredStats(updated);
+
+    return {
+      success: true,
+      message: `Welcome back, ${found.username}! 👋`,
+      user: { username: found.username },
+      userStats: updated,
+    };
+  } catch (e) {
+    return { success: false, message: 'Sign in failed. Please try again.' };
+  }
+};
+
+export const logoutUser = () => {
+  if (typeof window === 'undefined') return;
+  try {
+    localStorage.removeItem(AUTH_KEY);
+  } catch (e) {}
 };

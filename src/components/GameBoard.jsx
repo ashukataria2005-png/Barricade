@@ -21,7 +21,7 @@ import {
   MoreVertical,
   BookOpen
 } from 'lucide-react';
-import { getStoredStats, recordMatchOutcome, checkQuestsOnMatchEnd } from '../utils/stats';
+import { getStoredStats, recordMatchOutcome, checkQuestsOnMatchEnd, recordSetOutcome } from '../utils/stats';
 import { getStoredTheme } from '../utils/themes';
 import { getStoredSettings } from '../utils/settings';
 import { hapticMove, hapticWall, hapticError, hapticVictory } from '../utils/haptics';
@@ -29,6 +29,7 @@ import { checkMatchAchievements } from '../utils/achievements';
 import { t } from '../utils/i18n';
 import ChatModal from './ChatModal';
 import HowToPlayModal from './HowToPlayModal';
+import SetWonModal from './SetWonModal';
 import BrandLogo from './BrandLogo';
 
 // ───────────────── PROCEDURAL WEB AUDIO SYNTHESIZER ─────────────────
@@ -225,6 +226,8 @@ export default function GameBoard({
   // Dynamic Best-of-3 Series Tracking: First to 3 wins takes the set!
   const [seriesScore, setSeriesScore] = useState({ you: 0, opponent: 0 });
   const [setWonBanner, setSetWonBanner] = useState(null);
+  const [showSetWonModal, setShowSetWonModal] = useState(false);
+  const [lastSetData, setLastSetData] = useState(null);
 
   // Result state
   const [gameResult, setGameResult] = useState(null);
@@ -601,18 +604,37 @@ export default function GameBoard({
     if (newYouWins >= 3) {
       setSetWonBanner({
         winner: 'you',
-        message: `🏆 Set Won! (${newYouWins}-${newOpponentWins})`,
+        message: `🏆 Set Won! (${newYouWins}-${newOpponentWins}) +1 💎`,
       });
-      finalStats = {
-        ...updated,
-        setsWon: (updated.setsWon || 0) + 1,
-      };
-      saveStoredStats(finalStats);
+      finalStats = recordSetOutcome({
+        opponent,
+        score: `${newYouWins}-${newOpponentWins}`,
+        isWin: true,
+        rewardDiamonds: 1,
+      });
+      setLastSetData({
+        winner: 'you',
+        score: `${newYouWins}-${newOpponentWins}`,
+        opponentName: opponent,
+      });
+      setShowSetWonModal(true);
     } else if (newOpponentWins >= 3) {
       setSetWonBanner({
         winner: 'opponent',
         message: `Set Completed (${newYouWins}-${newOpponentWins})`,
       });
+      finalStats = recordSetOutcome({
+        opponent,
+        score: `${newYouWins}-${newOpponentWins}`,
+        isWin: false,
+        rewardDiamonds: 0,
+      });
+      setLastSetData({
+        winner: 'opponent',
+        score: `${newYouWins}-${newOpponentWins}`,
+        opponentName: opponent,
+      });
+      setShowSetWonModal(true);
     } else {
       setSetWonBanner(null);
     }
@@ -1918,15 +1940,16 @@ export default function GameBoard({
             {/* Dynamic Best-of-3 / 3-Win Set Tracking */}
             <div className="flex flex-col items-center gap-2 mb-4 w-full bg-bgDark/60 border border-borderDark/60 rounded-2xl p-3 shadow-inner">
               <div className="flex items-center justify-between w-full px-1">
-                <span className="text-[10px] font-bold text-gray-400 tracking-widest uppercase">
-                  Best of 3 Sets
+                <span className="text-[10px] font-bold text-gray-400 tracking-widest uppercase flex items-center gap-1">
+                  <span>Best of 3 Sets</span>
+                  <span className="text-cyan-400">💎</span>
                 </span>
                 <span className="text-xs font-mono font-bold text-brandOrange">
                   {seriesScore.you} - {seriesScore.opponent}
                 </span>
               </div>
 
-              {/* Opponent Wins / Crosses */}
+              {/* Opponent Wins / Diamonds */}
               <div className="flex items-center justify-between w-full px-1 text-xs">
                 <span className="text-[11px] text-gray-400 font-medium truncate max-w-[130px]">
                   {gameMode === 'ai' ? 'StockBot' : opponentName || 'Opponent'}
@@ -1937,20 +1960,21 @@ export default function GameBoard({
                     return (
                       <div
                         key={`opp-${idx}`}
-                        className={`w-6 h-6 rounded-full border flex items-center justify-center text-xs font-bold transition-all ${
+                        className={`w-7 h-7 rounded-xl border flex items-center justify-center text-xs font-bold transition-all ${
                           filled
-                            ? 'bg-blue-500/20 border-blue-500 text-blue-400 shadow-sm shadow-blue-500/30'
-                            : 'border-borderDark/60 bg-cardDark/40 text-transparent'
+                            ? 'bg-blue-500/25 border-cyan-400 text-cyan-300 shadow-[0_0_12px_rgba(6,182,212,0.45)] scale-105'
+                            : 'border-borderDark/60 bg-cardDark/40 text-gray-600'
                         }`}
+                        title={filled ? '1 Diamond Win' : 'Empty Diamond Slot'}
                       >
-                        {filled ? '✕' : ''}
+                        {filled ? '💎' : '◇'}
                       </div>
                     );
                   })}
                 </div>
               </div>
 
-              {/* You Wins / Crosses */}
+              {/* You Wins / Diamonds */}
               <div className="flex items-center justify-between w-full px-1 text-xs">
                 <span className="text-[11px] text-gray-200 font-bold truncate max-w-[130px]">
                   {userStats.username || 'You'}
@@ -1961,13 +1985,14 @@ export default function GameBoard({
                     return (
                       <div
                         key={`you-${idx}`}
-                        className={`w-6 h-6 rounded-full border flex items-center justify-center text-xs font-bold transition-all ${
+                        className={`w-7 h-7 rounded-xl border flex items-center justify-center text-xs font-bold transition-all ${
                           filled
-                            ? 'bg-rose-500/20 border-rose-500 text-rose-400 shadow-sm shadow-rose-500/30'
-                            : 'border-borderDark/60 bg-cardDark/40 text-transparent'
+                            ? 'bg-amber-500/25 border-amber-400 text-amber-300 shadow-[0_0_12px_rgba(245,158,11,0.45)] scale-105'
+                            : 'border-borderDark/60 bg-cardDark/40 text-gray-600'
                         }`}
+                        title={filled ? '1 Diamond Win' : 'Empty Diamond Slot'}
                       >
-                        {filled ? '✕' : ''}
+                        {filled ? '💎' : '◇'}
                       </div>
                     );
                   })}
@@ -2215,6 +2240,28 @@ export default function GameBoard({
         isOpen={showRulesModal}
         onClose={() => setShowRulesModal(false)}
       />
+
+      {/* Grand Set Champion Modal */}
+      {lastSetData && (
+        <SetWonModal
+          isOpen={showSetWonModal}
+          winner={lastSetData.winner}
+          score={lastSetData.score}
+          opponentName={lastSetData.opponentName}
+          onContinue={() => {
+            setShowSetWonModal(false);
+            setSeriesScore({ you: 0, opponent: 0 });
+            setSetWonBanner(null);
+            restartGame();
+          }}
+          onLobby={() => {
+            setShowSetWonModal(false);
+            setSeriesScore({ you: 0, opponent: 0 });
+            setSetWonBanner(null);
+            onBack();
+          }}
+        />
+      )}
     </div>
   );
 }

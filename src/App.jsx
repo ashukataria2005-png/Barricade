@@ -53,7 +53,8 @@ import ProfileEditModal from './components/ProfileEditModal';
 import StoreModal from './components/StoreModal';
 import SandboxRulesModal from './components/SandboxRulesModal';
 import BrandLogo from './components/BrandLogo';
-import { getStoredStats, getTierFromLevel, getXpForNextLevel, AVATAR_PRESETS, getStoredCosmetics } from './utils/stats';
+import AuthModal from './components/AuthModal';
+import { getStoredStats, getTierFromLevel, getXpForNextLevel, AVATAR_PRESETS, getStoredCosmetics, getStoredAuthUser } from './utils/stats';
 import { getStoredTheme } from './utils/themes';
 import { getStoredSettings } from './utils/settings';
 import { initHost, joinRoom } from './utils/multiplayer';
@@ -85,6 +86,10 @@ export default function App() {
 
   // How to Play Guide Modal
   const [showHowToPlayModal, setShowHowToPlayModal] = useState(false);
+
+  // Authentication & Profile History Sub-Tabs
+  const [showAuthModal, setShowAuthModal] = useState(false);
+  const [profileHistoryTab, setProfileHistoryTab] = useState('matches'); // 'matches' | 'sets'
 
   // Time controls: 1 min, 3 min, 5 min, 10 min
   const [selectedMinutes, setSelectedMinutes] = useState(3);
@@ -516,15 +521,29 @@ export default function App() {
                 <span className="text-[10px] text-cyan-400 font-semibold hidden xs:inline">💎</span>
               </div>
 
-              {/* Profile Avatar Chip */}
+              {/* Profile Avatar Chip / Auth Trigger */}
               <div
-                onClick={() => setShowProfileEditModal(true)}
-                className="flex items-center gap-2 bg-cardDark/90 hover:bg-borderDark/80 px-2.5 py-1 rounded-full border border-borderDark/70 text-xs font-semibold transition cursor-pointer active:scale-95"
-                title="Edit Profile"
+                onClick={() => {
+                  const authUser = getStoredAuthUser();
+                  if (!authUser) {
+                    setShowAuthModal(true);
+                  } else {
+                    setShowProfileEditModal(true);
+                  }
+                }}
+                className="flex items-center gap-1.5 sm:gap-2 bg-cardDark/90 hover:bg-borderDark/80 px-2.5 py-1 rounded-full border border-borderDark/70 text-xs font-semibold transition cursor-pointer active:scale-95"
+                title={getStoredAuthUser() ? "Profile Settings" : "Sign In / Register (+100 💎 & 1200 Elo)"}
               >
                 <span className="text-sm leading-none">{userStats.flag || '🇮🇳'}</span>
                 <span className="text-gray-200 font-bold max-w-[85px] sm:max-w-[110px] truncate">{userStats.username || 'AshuKataria'}</span>
-                <span className="text-brandOrange font-mono font-bold text-[11px]">{userStats.elo || 1092}</span>
+                <span className="text-brandOrange font-mono font-bold text-[11px]">{userStats.elo || 1200}</span>
+                {!getStoredAuthUser() ? (
+                  <span className="text-[9px] bg-amber-500/20 text-brandOrange border border-amber-500/40 px-1.5 py-0.5 rounded-md font-bold uppercase hidden xs:inline">
+                    Sign In
+                  </span>
+                ) : (
+                  <span className="text-[10px] text-cyan-400 font-bold">💎</span>
+                )}
               </div>
             </div>
           </header>
@@ -885,13 +904,27 @@ export default function App() {
                       </div>
                     </div>
 
-                    <button
-                      onClick={() => setShowProfileEditModal(true)}
-                      className="flex items-center gap-1.5 bg-bgDark hover:bg-borderDark/60 border border-borderDark text-gray-300 hover:text-white px-2.5 py-1.5 rounded-xl text-xs font-semibold transition cursor-pointer"
-                    >
-                      <Edit3 size={13} />
-                      <span>Edit</span>
-                    </button>
+                    <div className="flex items-center gap-1.5">
+                      <button
+                        onClick={() => setShowAuthModal(true)}
+                        className={`flex items-center gap-1.5 border px-2.5 py-1.5 rounded-xl text-xs font-semibold transition cursor-pointer ${
+                          getStoredAuthUser()
+                            ? 'bg-bgDark hover:bg-borderDark/60 border-borderDark text-gray-300 hover:text-white'
+                            : 'bg-amber-500/20 hover:bg-amber-500/30 border-amber-500/60 text-amber-300 font-bold shadow-xs'
+                        }`}
+                        title="Account & Auth"
+                      >
+                        <User size={13} />
+                        <span>{getStoredAuthUser() ? 'Account' : 'Sign In (+100 💎)'}</span>
+                      </button>
+                      <button
+                        onClick={() => setShowProfileEditModal(true)}
+                        className="flex items-center gap-1.5 bg-bgDark hover:bg-borderDark/60 border border-borderDark text-gray-300 hover:text-white px-2.5 py-1.5 rounded-xl text-xs font-semibold transition cursor-pointer"
+                      >
+                        <Edit3 size={13} />
+                        <span>Edit</span>
+                      </button>
+                    </div>
                   </div>
 
                   {/* Level & XP Progression Card in Profile */}
@@ -978,43 +1011,157 @@ export default function App() {
                     </button>
                   </div>
 
-                  {/* Match History */}
+                  {/* Dedicated Match vs Set History Tabs */}
                   <div className="flex flex-col gap-2 mt-2">
                     <div className="flex items-center justify-between">
-                      <h3 className="text-sm font-bold text-gray-300">Recent Matches</h3>
-                      <span className="text-[11px] text-gray-500">Tap to analyze</span>
+                      {/* Segmented Sub-Tab Switcher */}
+                      <div className="flex items-center bg-bgDark/80 p-0.5 rounded-xl border border-borderDark/60">
+                        <button
+                          type="button"
+                          onClick={() => setProfileHistoryTab('matches')}
+                          className={`px-3 py-1 rounded-lg text-xs font-bold transition cursor-pointer ${
+                            profileHistoryTab === 'matches'
+                              ? 'bg-brandOrange text-black shadow-xs font-black'
+                              : 'text-gray-400 hover:text-gray-200'
+                          }`}
+                        >
+                          Match History
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => setProfileHistoryTab('sets')}
+                          className={`flex items-center gap-1 px-3 py-1 rounded-lg text-xs font-bold transition cursor-pointer ${
+                            profileHistoryTab === 'sets'
+                              ? 'bg-brandOrange text-black shadow-xs font-black'
+                              : 'text-gray-400 hover:text-gray-200'
+                          }`}
+                        >
+                          <span>Set History</span>
+                          <span className="text-[10px]">💎</span>
+                        </button>
+                      </div>
+
+                      <span className="text-[11px] text-gray-500">
+                        {profileHistoryTab === 'matches' ? 'Tap to analyze' : 'Best of 3 Sets'}
+                      </span>
                     </div>
-                    {(userStats.history || []).slice(0, 5).map((match, idx) => (
-                      <div
-                        key={idx}
-                        onClick={() => setSelectedProfileMatch(match)}
-                        className="bg-cardDark border border-borderDark/50 hover:border-brandOrange/60 p-3 rounded-xl flex items-center justify-between transition cursor-pointer active:scale-[0.99] group"
-                      >
-                        <div>
-                          <div className="text-sm font-semibold text-gray-200 group-hover:text-brandOrange transition">
-                            {match.opponent}
-                          </div>
-                          <div className="text-[10px] text-gray-400">{match.date} · {match.movesCount || 12} moves</div>
-                        </div>
-                        <div className="text-right flex items-center gap-2">
-                          <div>
-                            <span
-                              className={`text-xs font-bold px-2 py-0.5 rounded-md ${
-                                match.result === 'win'
-                                  ? 'bg-green-500/20 text-green-400 border border-green-500/40'
-                                  : 'bg-red-500/20 text-red-400 border border-red-500/40'
-                              }`}
-                            >
-                              {match.result === 'win' ? 'Victory' : 'Defeat'}
-                            </span>
-                            <div className="text-xs font-mono font-semibold text-gray-400 mt-1">
-                              {match.eloChange}
+
+                    {profileHistoryTab === 'matches' ? (
+                      /* Normal Match History */
+                      <div className="flex flex-col gap-2">
+                        {(userStats.history || []).slice(0, 5).map((match, idx) => (
+                          <div
+                            key={idx}
+                            onClick={() => setSelectedProfileMatch(match)}
+                            className="bg-cardDark border border-borderDark/50 hover:border-brandOrange/60 p-3 rounded-xl flex items-center justify-between transition cursor-pointer active:scale-[0.99] group"
+                          >
+                            <div>
+                              <div className="text-sm font-semibold text-gray-200 group-hover:text-brandOrange transition">
+                                {match.opponent}
+                              </div>
+                              <div className="text-[10px] text-gray-400">{match.date} · {match.movesCount || 12} moves</div>
+                            </div>
+                            <div className="text-right flex items-center gap-2">
+                              <div>
+                                <span
+                                  className={`text-xs font-bold px-2 py-0.5 rounded-md ${
+                                    match.result === 'win'
+                                      ? 'bg-green-500/20 text-green-400 border border-green-500/40'
+                                      : 'bg-red-500/20 text-red-400 border border-red-500/40'
+                                  }`}
+                                >
+                                  {match.result === 'win' ? 'Victory' : 'Defeat'}
+                                </span>
+                                <div className="text-xs font-mono font-semibold text-gray-400 mt-1">
+                                  {match.eloChange}
+                                </div>
+                              </div>
+                              <ChevronRight size={14} className="text-gray-500 group-hover:text-brandOrange transition" />
                             </div>
                           </div>
-                          <ChevronRight size={14} className="text-gray-500 group-hover:text-brandOrange transition" />
-                        </div>
+                        ))}
                       </div>
-                    ))}
+                    ) : (
+                      /* Dedicated Set History (Best of 3) */
+                      <div className="flex flex-col gap-2.5">
+                        {/* Set Summary Card */}
+                        <div className="grid grid-cols-4 gap-2 bg-gradient-to-r from-cyan-950/40 via-cardDark to-cardDark border border-cyan-500/30 p-3 rounded-2xl text-center shadow-xs">
+                          <div>
+                            <div className="text-[10px] text-gray-400 uppercase font-bold">Sets Played</div>
+                            <div className="text-sm font-mono font-black text-gray-200 mt-0.5">{userStats.setsPlayed || 0}</div>
+                          </div>
+                          <div>
+                            <div className="text-[10px] text-gray-400 uppercase font-bold">Sets Won</div>
+                            <div className="text-sm font-mono font-black text-emerald-400 mt-0.5">{userStats.setsWon || 0}</div>
+                          </div>
+                          <div>
+                            <div className="text-[10px] text-gray-400 uppercase font-bold">Win Rate</div>
+                            <div className="text-sm font-mono font-black text-amber-400 mt-0.5">
+                              {userStats.setsPlayed ? Math.round(((userStats.setsWon || 0) / userStats.setsPlayed) * 100) : 0}%
+                            </div>
+                          </div>
+                          <div>
+                            <div className="text-[10px] text-cyan-400 uppercase font-bold flex items-center justify-center gap-0.5">
+                              <span>Diamonds</span>
+                              <span>💎</span>
+                            </div>
+                            <div className="text-sm font-mono font-black text-cyan-300 mt-0.5">
+                              +{userStats.diamondsFromSets || 0}
+                            </div>
+                          </div>
+                        </div>
+
+                        {/* Set Series Records List */}
+                        {(!userStats.setHistory || userStats.setHistory.length === 0) ? (
+                          <div className="bg-cardDark border border-borderDark/60 rounded-xl p-5 text-center text-xs text-gray-400">
+                            No completed sets yet. Play a Best-of-3 set in GameBoard to earn +1 Diamond! 💎
+                          </div>
+                        ) : (
+                          userStats.setHistory.map((set, idx) => (
+                            <div
+                              key={set.id || idx}
+                              className="bg-cardDark border border-borderDark/60 hover:border-cyan-500/40 p-3 rounded-xl flex items-center justify-between transition"
+                            >
+                              <div className="flex items-center gap-2.5">
+                                <div className={`w-8 h-8 rounded-xl flex items-center justify-center text-base ${
+                                  set.result === 'win'
+                                    ? 'bg-amber-500/20 border border-amber-400 text-amber-300'
+                                    : 'bg-zinc-800 border border-zinc-700 text-zinc-400'
+                                }`}>
+                                  {set.result === 'win' ? '🏆' : '⚔️'}
+                                </div>
+                                <div className="text-left">
+                                  <div className="text-xs font-bold text-gray-200">
+                                    vs {set.opponent}
+                                  </div>
+                                  <div className="text-[10px] text-gray-400">
+                                    {set.date} · Best of 3 Sets
+                                  </div>
+                                </div>
+                              </div>
+
+                              <div className="text-right flex items-center gap-3">
+                                <div>
+                                  <div className="text-sm font-mono font-black tracking-wider text-white">
+                                    {set.score}
+                                  </div>
+                                  <div className="text-[10px] font-bold">
+                                    {set.result === 'win' ? (
+                                      <span className="text-cyan-400 flex items-center gap-0.5 justify-end">
+                                        <span>+1 💎</span>
+                                        <span className="text-emerald-400">Won</span>
+                                      </span>
+                                    ) : (
+                                      <span className="text-gray-500">Defeated</span>
+                                    )}
+                                  </div>
+                                </div>
+                              </div>
+                            </div>
+                          ))
+                        )}
+                      </div>
+                    )}
                   </div>
                 </div>
               )}
@@ -1023,6 +1170,7 @@ export default function App() {
                 <div className="flex flex-col gap-2">
                   <h2 className="text-xl font-bold mb-2">{t('more_options', lang)}</h2>
                   {[
+                    { name: getStoredAuthUser() ? 'Account & Profile (Switch User)' : 'Sign In / Register (+100 💎 Bonus)', icon: User, action: () => setShowAuthModal(true) },
                     { name: t('store_title', lang), icon: ShoppingBag, action: () => setShowStoreModal(true) },
                     { name: t('language', lang) + (lang === 'en' ? ' (English 🇬🇧)' : ' (हिन्दी 🇮🇳)'), icon: Globe, action: handleToggleLanguage },
                     { name: t('app_tour', lang), icon: HelpCircle, action: () => { setTourStep(1); setShowTour(true); } },
@@ -1491,6 +1639,15 @@ export default function App() {
             </div>
           </div>
         )}
+
+        {/* Authentication Modal (Sign Up / Sign In with 1200 Elo & 100 Diamonds) */}
+        <AuthModal
+          isOpen={showAuthModal}
+          onClose={() => setShowAuthModal(false)}
+          onAuthSuccess={(newStats) => {
+            if (newStats) setUserStats(newStats);
+          }}
+        />
       </div>
     </div>
   );
