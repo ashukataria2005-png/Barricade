@@ -16,7 +16,8 @@ import {
   VolumeX,
   History,
   Undo2,
-  Sliders
+  Sliders,
+  Sparkles
 } from 'lucide-react';
 import { getStoredStats, recordMatchOutcome, checkQuestsOnMatchEnd } from '../utils/stats';
 import { getStoredTheme } from '../utils/themes';

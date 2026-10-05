@@ -1,5 +1,5 @@
 import React, { useState } from 'react';
-import { X, Sliders, Shield, Clock, Zap, Users, Cpu, Play } from 'lucide-react';
+import { X, Sliders, Shield, Clock, Zap, Users, Cpu, Play, Sparkles } from 'lucide-react';
 
 export default function SandboxRulesModal({
   isOpen,

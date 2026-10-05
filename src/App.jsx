@@ -33,7 +33,8 @@ import {
   Edit3,
   ShoppingBag,
   Globe,
-  HelpCircle
+  HelpCircle,
+  Sparkles
 } from 'lucide-react';
 import GameBoard from './components/GameBoard';
 import PuzzlesView from './components/PuzzlesView';

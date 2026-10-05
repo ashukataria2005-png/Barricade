@@ -12,7 +12,8 @@ import {
   Coins,
   ChevronRight,
   Flame,
-  Volume2
+  Volume2,
+  Sparkles
 } from 'lucide-react';
 import { getStoredStats, addCoins, deductCoins } from '../utils/stats';
 import { getStoredTheme } from '../utils/themes';
