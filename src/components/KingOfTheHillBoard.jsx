@@ -13,7 +13,10 @@ import {
   Sparkles
 } from 'lucide-react';
 
-export default function KingOfTheHillBoard({ onBack }) {
+import { getStoredTheme } from '../utils/themes';
+
+export default function KingOfTheHillBoard({ onBack, theme }) {
+  const activeTheme = theme || getStoredTheme();
   // 4 Player turn cycle: 'red' -> 'blue' -> 'green' -> 'yellow'
   const [turn, setTurn] = useState('red');
 
@@ -389,7 +392,10 @@ export default function KingOfTheHillBoard({ onBack }) {
       )}
 
       {/* 9x9 Board with Crown Center */}
-      <div className="relative bg-[#161618] p-3 rounded-2xl border border-borderDark/80 my-auto shadow-2xl overflow-hidden aspect-square flex items-center justify-center">
+      <div
+        style={{ backgroundColor: activeTheme.boardBg }}
+        className="relative p-3 rounded-2xl border border-borderDark/80 my-auto shadow-2xl overflow-hidden aspect-square flex items-center justify-center transition-colors duration-300"
+      >
         <div className="grid grid-cols-9 grid-rows-9 gap-1.5 w-full h-full">
           {Array.from({ length: 9 }).map((_, r) =>
             Array.from({ length: 9 }).map((_, c) => {
@@ -404,12 +410,13 @@ export default function KingOfTheHillBoard({ onBack }) {
                 <div
                   key={`koth-cell-${r}-${c}`}
                   onClick={() => handleCellClick(r, c)}
+                  style={{ backgroundColor: isCenter || isValid ? undefined : activeTheme.cellBg }}
                   className={`relative flex items-center justify-center rounded-lg transition-all aspect-square touch-manipulation cursor-pointer ${
                     isCenter
                       ? 'bg-amber-500/25 border-2 border-amber-400 shadow-lg shadow-amber-500/30'
                       : isValid
                       ? 'bg-amber-500/20 border-2 border-amber-400'
-                      : 'bg-[#26262a] hover:bg-[#303036]'
+                      : 'hover:brightness-110'
                   }`}
                 >
                   {isCenter && (
@@ -454,7 +461,7 @@ export default function KingOfTheHillBoard({ onBack }) {
                     width: `${200 / 9}%`,
                     height: '8px',
                   }}
-                  className="absolute bg-gradient-to-r from-amber-400 via-amber-500 to-amber-600 rounded-full shadow-lg border border-amber-300 z-20"
+                  className={`absolute bg-gradient-to-r ${activeTheme.wallGradient} rounded-full shadow-lg border ${activeTheme.wallBorder} z-20`}
                 />
               );
             } else {
@@ -467,7 +474,7 @@ export default function KingOfTheHillBoard({ onBack }) {
                     width: '8px',
                     height: `${200 / 9}%`,
                   }}
-                  className="absolute bg-gradient-to-b from-amber-400 via-amber-500 to-amber-600 rounded-full shadow-lg border border-amber-300 z-20"
+                  className={`absolute bg-gradient-to-b ${activeTheme.wallGradient} rounded-full shadow-lg border ${activeTheme.wallBorder} z-20`}
                 />
               );
             }

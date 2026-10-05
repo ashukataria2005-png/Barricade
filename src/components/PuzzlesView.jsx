@@ -11,6 +11,7 @@ import {
   ArrowLeft
 } from 'lucide-react';
 import { getStoredStats, recordPuzzleSolved } from '../utils/stats';
+import { getStoredTheme } from '../utils/themes';
 
 const PUZZLES = [
   {
@@ -59,7 +60,8 @@ const PUZZLES = [
   },
 ];
 
-export default function PuzzlesView({ onPuzzleCompleted }) {
+export default function PuzzlesView({ onPuzzleCompleted, theme }) {
+  const activeTheme = theme || getStoredTheme();
   const [stats, setStats] = useState(getStoredStats());
   const [activePuzzleIndex, setActivePuzzleIndex] = useState(null);
   const [puzzleState, setPuzzleState] = useState(null);
@@ -217,7 +219,10 @@ export default function PuzzlesView({ onPuzzleCompleted }) {
         </div>
 
         {/* 9x9 Interactive Puzzle Board */}
-        <div className="relative bg-[#161618] p-3 rounded-2xl border border-borderDark/80 my-auto shadow-2xl overflow-hidden aspect-square flex items-center justify-center">
+        <div
+          style={{ backgroundColor: activeTheme.boardBg }}
+          className="relative p-3 rounded-2xl border border-borderDark/80 my-auto shadow-2xl overflow-hidden aspect-square flex items-center justify-center transition-colors duration-300"
+        >
           <div className="grid grid-cols-9 grid-rows-9 gap-1.5 w-full h-full">
             {Array.from({ length: 9 }).map((_, r) =>
               Array.from({ length: 9 }).map((_, c) => {
@@ -228,13 +233,14 @@ export default function PuzzlesView({ onPuzzleCompleted }) {
                   <div
                     key={`pcell-${r}-${c}`}
                     onClick={() => handleCellClick(r, c)}
-                    className="relative flex items-center justify-center rounded-lg cursor-pointer bg-[#26262a] hover:bg-[#323238] transition-all aspect-square touch-manipulation"
+                    style={{ backgroundColor: activeTheme.cellBg }}
+                    className="relative flex items-center justify-center rounded-lg cursor-pointer hover:brightness-110 transition-all aspect-square touch-manipulation"
                   >
                     {isRed && (
-                      <div className="w-6 h-6 rounded-full bg-rose-500 border-2 border-white shadow-lg ring-2 ring-rose-500/40" />
+                      <div className={`w-6 h-6 rounded-full border-2 shadow-lg ${activeTheme.redPawn}`} />
                     )}
                     {isBlue && (
-                      <div className="w-6 h-6 rounded-full bg-blue-500 border-2 border-white shadow-lg ring-2 ring-blue-500/40" />
+                      <div className={`w-6 h-6 rounded-full border-2 shadow-lg ${activeTheme.bluePawn}`} />
                     )}
                   </div>
                 );
@@ -258,7 +264,7 @@ export default function PuzzlesView({ onPuzzleCompleted }) {
                       width: `${200 / 9}%`,
                       height: '8px',
                     }}
-                    className="absolute bg-gradient-to-r from-amber-400 via-amber-500 to-amber-600 rounded-full shadow-lg shadow-amber-500/50 border border-amber-300 z-20"
+                    className={`absolute bg-gradient-to-r ${activeTheme.wallGradient} rounded-full shadow-lg border ${activeTheme.wallBorder} z-20`}
                   />
                 );
               } else {
@@ -271,7 +277,7 @@ export default function PuzzlesView({ onPuzzleCompleted }) {
                       width: '8px',
                       height: `${200 / 9}%`,
                     }}
-                    className="absolute bg-gradient-to-b from-amber-400 via-amber-500 to-amber-600 rounded-full shadow-lg shadow-amber-500/50 border border-amber-300 z-20"
+                    className={`absolute bg-gradient-to-b ${activeTheme.wallGradient} rounded-full shadow-lg border ${activeTheme.wallBorder} z-20`}
                   />
                 );
               }

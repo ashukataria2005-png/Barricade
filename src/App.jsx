@@ -19,13 +19,18 @@ import {
   Check,
   Copy,
   Link2,
-  Share2
+  Share2,
+  Palette,
+  BookOpen
 } from 'lucide-react';
 import GameBoard from './components/GameBoard';
 import PuzzlesView from './components/PuzzlesView';
 import WatchView from './components/WatchView';
 import KingOfTheHillBoard from './components/KingOfTheHillBoard';
+import ThemeModal from './components/ThemeModal';
+import HowToPlayModal from './components/HowToPlayModal';
 import { getStoredStats } from './utils/stats';
+import { getStoredTheme } from './utils/themes';
 
 export default function App() {
   const [activeTab, setActiveTab] = useState('play');
@@ -35,6 +40,13 @@ export default function App() {
 
   // Persistent User stats
   const [userStats, setUserStats] = useState(() => getStoredStats());
+
+  // Board & Pawn Theme state
+  const [currentTheme, setCurrentTheme] = useState(() => getStoredTheme());
+  const [showThemeModal, setShowThemeModal] = useState(false);
+
+  // How to Play Guide Modal
+  const [showHowToPlayModal, setShowHowToPlayModal] = useState(false);
 
   // Time controls: 1 min, 3 min, 5 min, 10 min
   const [selectedMinutes, setSelectedMinutes] = useState(3);
@@ -157,6 +169,15 @@ export default function App() {
               Barricade
             </h1>
             <div className="flex items-center gap-2">
+              <button
+                type="button"
+                onClick={() => setShowThemeModal(true)}
+                className="flex items-center gap-1.5 bg-cardDark hover:bg-borderDark/60 px-2.5 py-1 rounded-full border border-borderDark text-xs font-semibold text-gray-300 hover:text-white transition cursor-pointer"
+                title="Board & Pawn Themes"
+              >
+                <Palette size={14} className="text-brandOrange" />
+                <span className="hidden sm:inline text-[11px]">Theme</span>
+              </button>
               <div className="flex items-center gap-1 bg-cardDark px-2 py-1 rounded-full border border-borderDark text-xs">
                 <Gem className="text-cyan-400" size={14} />
               </div>
@@ -175,11 +196,15 @@ export default function App() {
         {/* Dynamic Views */}
         <main className="flex-1 overflow-y-auto px-4 py-4">
           {inKingOfTheHill ? (
-            <KingOfTheHillBoard onBack={() => setInKingOfTheHill(false)} />
+            <KingOfTheHillBoard
+              theme={currentTheme}
+              onBack={() => setInKingOfTheHill(false)}
+            />
           ) : inGame ? (
             <GameBoard
               gameMinutes={selectedMinutes}
               gameMode={gameMode}
+              theme={currentTheme}
               onStatsUpdate={(updated) => setUserStats(updated)}
               onBack={() => setInGame(false)}
             />
@@ -355,7 +380,10 @@ export default function App() {
               )}
 
               {activeTab === 'puzzles' && (
-                <PuzzlesView onPuzzleCompleted={(updated) => setUserStats(updated)} />
+                <PuzzlesView
+                  theme={currentTheme}
+                  onPuzzleCompleted={(updated) => setUserStats(updated)}
+                />
               )}
 
               {activeTab === 'leaderboard' && (
@@ -452,18 +480,21 @@ export default function App() {
                 <div className="flex flex-col gap-2">
                   <h2 className="text-xl font-bold mb-2">More Options</h2>
                   {[
-                    { name: 'Barricade TV', action: () => setIsWatchingTv(true) },
-                    { name: 'Play with Friends', action: handleOpenCreateRoom },
-                    { name: 'Daily Puzzles', action: () => setActiveTab('puzzles') },
-                    { name: 'How to play', action: () => {} },
-                    { name: 'Settings', action: () => {} },
+                    { name: 'Board & Pawn Themes', icon: Palette, action: () => setShowThemeModal(true) },
+                    { name: 'How to play', icon: BookOpen, action: () => setShowHowToPlayModal(true) },
+                    { name: 'Barricade TV', icon: Tv, action: () => setIsWatchingTv(true) },
+                    { name: 'Play with Friends', icon: Users, action: handleOpenCreateRoom },
+                    { name: 'Daily Puzzles', icon: Puzzle, action: () => setActiveTab('puzzles') },
                   ].map((item) => (
                     <button
                       key={item.name}
                       onClick={item.action}
                       className="flex items-center justify-between bg-cardDark border border-borderDark/60 p-3.5 rounded-xl text-sm font-medium hover:bg-borderDark/40 transition cursor-pointer"
                     >
-                      <span>{item.name}</span>
+                      <div className="flex items-center gap-2.5">
+                        <item.icon className="text-brandOrange" size={17} />
+                        <span>{item.name}</span>
+                      </div>
                       <ChevronRight className="text-gray-500" size={16} />
                     </button>
                   ))}
@@ -635,6 +666,20 @@ export default function App() {
             </button>
           </nav>
         )}
+
+        {/* Board & Pawn Theme Modal */}
+        <ThemeModal
+          isOpen={showThemeModal}
+          onClose={() => setShowThemeModal(false)}
+          currentTheme={currentTheme}
+          onSelectTheme={(th) => setCurrentTheme(th)}
+        />
+
+        {/* Interactive How to Play Guide Modal */}
+        <HowToPlayModal
+          isOpen={showHowToPlayModal}
+          onClose={() => setShowHowToPlayModal(false)}
+        />
       </div>
     </div>
   );

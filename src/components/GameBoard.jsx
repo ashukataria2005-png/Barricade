@@ -14,9 +14,11 @@ import {
   Cpu,
   Volume2,
   VolumeX,
-  History
+  History,
+  Undo2
 } from 'lucide-react';
 import { getStoredStats, recordMatchOutcome } from '../utils/stats';
+import { getStoredTheme } from '../utils/themes';
 import ChatModal from './ChatModal';
 
 // ───────────────── PROCEDURAL WEB AUDIO SYNTHESIZER ─────────────────
@@ -156,7 +158,14 @@ const playLossSound = (ctx) => {
 
 const COLS = ['a', 'b', 'c', 'd', 'e', 'f', 'g', 'h', 'i'];
 
-export default function GameBoard({ gameMinutes = 3, gameMode = 'ranked', onBack, onStatsUpdate }) {
+export default function GameBoard({
+  gameMinutes = 3,
+  gameMode = 'ranked',
+  theme,
+  onBack,
+  onStatsUpdate,
+}) {
+  const activeTheme = theme || getStoredTheme();
   const initialSeconds = (gameMinutes || 3) * 60;
 
   // Turn: 'red' | 'blue'
@@ -200,33 +209,11 @@ export default function GameBoard({ gameMinutes = 3, gameMode = 'ranked', onBack
   const [chatMessages, setChatMessages] = useState([]);
   const [floatingBubble, setFloatingBubble] = useState(null);
 
-  const handleSendMessage = (text) => {
-    const timeStr = new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
-    const newMsg = { sender: 'me', text, time: timeStr };
-    setChatMessages((prev) => [...prev, newMsg]);
-    setFloatingBubble({ sender: 'me', text });
-    setTimeout(() => setFloatingBubble((curr) => (curr?.text === text ? null : curr)), 3000);
+  // AI Difficulty Level: 'easy' | 'medium' | 'hard'
+  const [aiDifficulty, setAiDifficulty] = useState('medium');
 
-    // AI opponent reply simulation
-    if (gameMode === 'ai') {
-      setTimeout(() => {
-        const botResponses = [
-          'Well played! 🤝',
-          'Good move! 🧱',
-          'Thanks! 🤖',
-          'Impressive strategy! 🔥',
-          'Thinking... 🤔',
-          'Game on! ⚡'
-        ];
-        const replyText = botResponses[Math.floor(Math.random() * botResponses.length)];
-        const botReply = { sender: 'opponent', text: replyText, time: timeStr };
-        setChatMessages((prev) => [...prev, botReply]);
-        setFloatingBubble({ sender: 'opponent', text: replyText });
-        setTimeout(() => setFloatingBubble((curr) => (curr?.text === replyText ? null : curr)), 3000);
-        playAudio('move');
-      }, 900);
-    }
-  };
+  // Move Undo History Stack (for local & practice games)
+  const [undoStack, setUndoStack] = useState([]);
 
   // AI thinking state
   const [isAiThinking, setIsAiThinking] = useState(false);
@@ -234,6 +221,40 @@ export default function GameBoard({ gameMinutes = 3, gameMode = 'ranked', onBack
   // Double tap confirmation states
   const [confirmResign, setConfirmResign] = useState(false);
   const [confirmBack, setConfirmBack] = useState(false);
+
+  // Push snapshot to undo stack
+  const pushUndoSnapshot = () => {
+    if (gameMode !== 'local' && gameMode !== 'ai') return;
+    setUndoStack((prev) => [
+      ...prev,
+      {
+        turn,
+        redPos: { ...redPos },
+        bluePos: { ...bluePos },
+        walls: [...walls],
+        redWalls,
+        blueWalls,
+        moveHistory: [...moveHistory],
+      },
+    ]);
+  };
+
+  // Undo Move handler
+  const handleUndo = () => {
+    if (undoStack.length === 0 || gameResult || isAiThinking) return;
+
+    const targetSnapshot = undoStack[undoStack.length - 1];
+    setUndoStack((prev) => prev.slice(0, -1));
+
+    setTurn(targetSnapshot.turn);
+    setRedPos(targetSnapshot.redPos);
+    setBluePos(targetSnapshot.bluePos);
+    setWalls(targetSnapshot.walls);
+    setRedWalls(targetSnapshot.redWalls);
+    setBlueWalls(targetSnapshot.blueWalls);
+    setMoveHistory(targetSnapshot.moveHistory);
+    playAudio('move');
+  };
 
   // Audio dispatcher
   const playAudio = (type) => {
@@ -249,12 +270,40 @@ export default function GameBoard({ gameMinutes = 3, gameMode = 'ranked', onBack
     } catch (e) {}
   };
 
+  // Chat sender
+  const handleSendMessage = (text) => {
+    const timeStr = new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
+    const newMsg = { sender: 'me', text, time: timeStr };
+    setChatMessages((prev) => [...prev, newMsg]);
+    setFloatingBubble({ sender: 'me', text });
+    setTimeout(() => setFloatingBubble((curr) => (curr?.text === text ? null : curr)), 3000);
+
+    if (gameMode === 'ai') {
+      setTimeout(() => {
+        const botResponses = [
+          'Well played! 🤝',
+          'Good move! 🧱',
+          'Thanks! 🤖',
+          'Impressive strategy! 🔥',
+          'Thinking... 🤔',
+          'Game on! ⚡',
+        ];
+        const replyText = botResponses[Math.floor(Math.random() * botResponses.length)];
+        const botReply = { sender: 'opponent', text: replyText, time: timeStr };
+        setChatMessages((prev) => [...prev, botReply]);
+        setFloatingBubble({ sender: 'opponent', text: replyText });
+        setTimeout(() => setFloatingBubble((curr) => (curr?.text === replyText ? null : curr)), 3000);
+        playAudio('move');
+      }, 900);
+    }
+  };
+
   // Outcome trigger helper with automatic LocalStorage update
   const triggerGameEnd = (result) => {
     setGameResult(result);
     const opponent =
       gameMode === 'ai'
-        ? 'StockBot (AI)'
+        ? `StockBot [${aiDifficulty.toUpperCase()}]`
         : gameMode === 'friend'
         ? 'Friend (Room)'
         : 'kamal47 (1188)';
@@ -326,7 +375,7 @@ export default function GameBoard({ gameMinutes = 3, gameMode = 'ranked', onBack
       }
     }, 1000);
     return () => clearInterval(interval);
-  }, [turn, gameResult, gameMode]);
+  }, [turn, gameResult, gameMode, aiDifficulty]);
 
   const formatClock = (secs) => {
     const m = Math.floor(secs / 60);
@@ -483,7 +532,7 @@ export default function GameBoard({ gameMinutes = 3, gameMode = 'ranked', onBack
     return moves;
   };
 
-  // 🤖 SMART AI DECISION ENGINE
+  // 🤖 SMART AI DECISION ENGINE WITH DIFFICULTY MODES
   const executeAiTurn = () => {
     if (gameResult) return;
 
@@ -495,8 +544,20 @@ export default function GameBoard({ gameMinutes = 3, gameMode = 'ranked', onBack
     let bestWall = null;
     let maxGain = 0;
 
-    const shouldConsiderWall = blueWalls > 0 && (redDist <= 4 || (blueDist > redDist && blueWalls > 2));
-    const wallProbability = redDist <= 2 ? 0.90 : 0.40;
+    // Difficulty settings
+    const shouldConsiderWall =
+      aiDifficulty === 'hard'
+        ? blueWalls > 0 && (redDist <= 4 || (blueDist > redDist && blueWalls > 1))
+        : aiDifficulty === 'medium'
+        ? blueWalls > 0 && (redDist <= 4 || (blueDist > redDist && blueWalls > 2))
+        : blueWalls > 0 && Math.random() < 0.15;
+
+    const wallProbability =
+      aiDifficulty === 'hard'
+        ? redDist <= 3 ? 0.95 : 0.70
+        : aiDifficulty === 'medium'
+        ? redDist <= 2 ? 0.90 : 0.40
+        : 0.20;
 
     if (shouldConsiderWall && Math.random() < wallProbability) {
       for (let r = 0; r < 8; r++) {
@@ -545,6 +606,7 @@ export default function GameBoard({ gameMinutes = 3, gameMode = 'ranked', onBack
       return;
     }
 
+    // Pawn Move
     const validMoves = getValidMoves(bluePos, redPos);
     if (validMoves.length > 0) {
       const directWin = validMoves.find((m) => m.r === 8);
@@ -556,7 +618,7 @@ export default function GameBoard({ gameMinutes = 3, gameMode = 'ranked', onBack
 
         triggerGameEnd({
           winner: 'blue',
-          reason: 'StockBot reached the goal first',
+          reason: `StockBot [${aiDifficulty.toUpperCase()}] reached the goal first`,
           isYouWin: false,
           eloDelta: -10,
         });
@@ -566,11 +628,16 @@ export default function GameBoard({ gameMinutes = 3, gameMode = 'ranked', onBack
       let bestMove = validMoves[0];
       let minDistance = Infinity;
 
-      for (const move of validMoves) {
-        const dist = getShortestPathLength(move, 8, walls);
-        if (dist < minDistance) {
-          minDistance = dist;
-          bestMove = move;
+      // In Easy mode, 35% chance to make random legal step
+      if (aiDifficulty === 'easy' && Math.random() < 0.35) {
+        bestMove = validMoves[Math.floor(Math.random() * validMoves.length)];
+      } else {
+        for (const move of validMoves) {
+          const dist = getShortestPathLength(move, 8, walls);
+          if (dist < minDistance) {
+            minDistance = dist;
+            bestMove = move;
+          }
         }
       }
 
@@ -582,7 +649,7 @@ export default function GameBoard({ gameMinutes = 3, gameMode = 'ranked', onBack
       if (bestMove.r === 8) {
         triggerGameEnd({
           winner: 'blue',
-          reason: 'StockBot reached the goal first',
+          reason: `StockBot [${aiDifficulty.toUpperCase()}] reached the goal first`,
           isYouWin: false,
           eloDelta: -10,
         });
@@ -605,7 +672,7 @@ export default function GameBoard({ gameMinutes = 3, gameMode = 'ranked', onBack
     }, 600);
 
     return () => clearTimeout(timer);
-  }, [turn, gameMode, gameResult, walls, redPos, bluePos, blueWalls]);
+  }, [turn, gameMode, gameResult, walls, redPos, bluePos, blueWalls, aiDifficulty]);
 
   const handleCellClick = (r, c) => {
     if (gameResult) return;
@@ -616,6 +683,7 @@ export default function GameBoard({ gameMinutes = 3, gameMode = 'ranked', onBack
     const validMoves = getValidMoves(currentPos, otherPos);
 
     if (validMoves.some((m) => m.r === r && m.c === c)) {
+      pushUndoSnapshot();
       playAudio('move');
       const notation = `${COLS[c]}${9 - r}`;
       setMoveHistory((prev) => [...prev, { player: turn, type: 'pawn', notation }]);
@@ -625,7 +693,7 @@ export default function GameBoard({ gameMinutes = 3, gameMode = 'ranked', onBack
         if (r === 0) {
           triggerGameEnd({
             winner: 'red',
-            reason: gameMode === 'ai' ? 'You defeated StockBot!' : 'You reached the goal first',
+            reason: gameMode === 'ai' ? `You defeated StockBot [${aiDifficulty.toUpperCase()}]!` : 'You reached the goal first',
             isYouWin: true,
             eloDelta: +12,
           });
@@ -683,6 +751,7 @@ export default function GameBoard({ gameMinutes = 3, gameMode = 'ranked', onBack
       return;
     }
 
+    pushUndoSnapshot();
     setWalls(testWalls);
     playAudio('wall');
 
@@ -736,6 +805,7 @@ export default function GameBoard({ gameMinutes = 3, gameMode = 'ranked', onBack
     setWarningMsg('');
     setIsAiThinking(false);
     setMoveHistory([]);
+    setUndoStack([]);
   };
 
   const currentPos = turn === 'red' ? redPos : bluePos;
@@ -814,6 +884,19 @@ export default function GameBoard({ gameMinutes = 3, gameMode = 'ranked', onBack
                 <span className="absolute -top-1 -right-1 w-2 h-2 rounded-full bg-brandOrange" />
               )}
             </button>
+
+            {/* Undo Button (For Local & AI Practice) */}
+            {(gameMode === 'local' || gameMode === 'ai') && (
+              <button
+                type="button"
+                onClick={handleUndo}
+                disabled={undoStack.length === 0 || isAiThinking || !!gameResult}
+                className="p-1.5 rounded-lg border text-xs font-semibold bg-cardDark border-borderDark text-gray-300 hover:text-white hover:bg-borderDark transition disabled:opacity-30 disabled:cursor-not-allowed cursor-pointer flex items-center gap-0.5"
+                title="Undo Move"
+              >
+                <Undo2 size={14} />
+              </button>
+            )}
           </div>
 
           {/* Opponent Floating Speech Bubble */}
@@ -830,8 +913,30 @@ export default function GameBoard({ gameMinutes = 3, gameMode = 'ranked', onBack
               </div>
               <div className="text-left">
                 <div className="flex items-center gap-1.5">
-                  <span className="text-sm font-bold text-gray-200">StockBot (AI)</span>
-                  <span className="text-[10px] bg-cyan-500/20 text-cyan-300 border border-cyan-500/40 px-1 rounded font-bold">1450</span>
+                  <span className="text-sm font-bold text-gray-200">StockBot</span>
+                  {/* Clickable AI Difficulty Toggle */}
+                  <button
+                    type="button"
+                    onClick={() => {
+                      const next =
+                        aiDifficulty === 'easy'
+                          ? 'medium'
+                          : aiDifficulty === 'medium'
+                          ? 'hard'
+                          : 'easy';
+                      setAiDifficulty(next);
+                    }}
+                    className={`text-[9px] font-bold px-1.5 py-0.2 rounded-md border uppercase transition cursor-pointer ${
+                      aiDifficulty === 'easy'
+                        ? 'bg-emerald-950 text-emerald-300 border-emerald-700'
+                        : aiDifficulty === 'medium'
+                        ? 'bg-cyan-950 text-cyan-300 border-cyan-700'
+                        : 'bg-rose-950 text-rose-300 border-rose-700'
+                    }`}
+                    title="Toggle difficulty (Easy / Med / Hard)"
+                  >
+                    {aiDifficulty}
+                  </button>
                 </div>
                 {isAiThinking ? (
                   <div className="flex items-center gap-1 text-[11px] text-cyan-400 font-semibold animate-pulse">
@@ -874,10 +979,10 @@ export default function GameBoard({ gameMinutes = 3, gameMode = 'ranked', onBack
           <div className="flex items-center justify-between bg-bgDark/60 border border-borderDark/60 rounded-xl px-3 py-1.5 mt-2.5 text-[11px] text-gray-300">
             <span className="flex items-center gap-1.5 text-cyan-400 font-medium">
               <Cpu size={13} />
-              <span>Smart BFS Pathfinding Engine</span>
+              <span>BFS Engine · {aiDifficulty.toUpperCase()}</span>
             </span>
             <span className="text-gray-400">
-              AI Inventory: <strong className="text-white font-mono">{blueWalls}</strong>
+              AI Barricades: <strong className="text-white font-mono">{blueWalls}</strong>
             </span>
           </div>
         ) : (
@@ -961,8 +1066,11 @@ export default function GameBoard({ gameMinutes = 3, gameMode = 'ranked', onBack
         </div>
       )}
 
-      {/* ───────────────── 9x9 BOARD ───────────────── */}
-      <div className="relative bg-[#161618] p-3 rounded-2xl border border-borderDark/80 my-auto shadow-2xl overflow-hidden aspect-square flex items-center justify-center">
+      {/* ───────────────── 9x9 BOARD (THEMED) ───────────────── */}
+      <div
+        style={{ backgroundColor: activeTheme.boardBg }}
+        className="relative p-3 rounded-2xl border border-borderDark/80 my-auto shadow-2xl overflow-hidden aspect-square flex items-center justify-center transition-colors duration-300"
+      >
         <div className="grid grid-cols-9 grid-rows-9 gap-1.5 sm:gap-2 w-full h-full">
           {Array.from({ length: 9 }).map((_, r) =>
             Array.from({ length: 9 }).map((_, c) => {
@@ -975,19 +1083,20 @@ export default function GameBoard({ gameMinutes = 3, gameMode = 'ranked', onBack
                 <div
                   key={`cell-${r}-${c}`}
                   onClick={() => handleCellClick(r, c)}
+                  style={{ backgroundColor: activeTheme.cellBg }}
                   className={`relative flex items-center justify-center rounded-lg transition-all aspect-square touch-manipulation ${
-                    isAiTurn ? 'cursor-not-allowed' : 'cursor-pointer'
+                    isAiTurn ? 'cursor-not-allowed' : 'cursor-pointer hover:brightness-110'
                   } ${
                     isValid && !isAiTurn
-                      ? 'bg-amber-500/20 border-2 border-amber-400 shadow-sm'
-                      : 'bg-[#26262a] hover:bg-[#303036] active:bg-[#35353c]'
+                      ? 'ring-2 ring-amber-400 ring-offset-1 ring-offset-black/50 shadow-sm'
+                      : ''
                   }`}
                 >
                   {isRed && (
-                    <div className="w-6 h-6 rounded-full bg-rose-500 border-2 border-white shadow-lg ring-2 ring-rose-500/40" />
+                    <div className={`w-6 h-6 rounded-full border-2 shadow-lg ${activeTheme.redPawn}`} />
                   )}
                   {isBlue && (
-                    <div className="w-6 h-6 rounded-full bg-blue-500 border-2 border-white shadow-lg ring-2 ring-blue-500/40" />
+                    <div className={`w-6 h-6 rounded-full border-2 shadow-lg ${activeTheme.bluePawn}`} />
                   )}
                   {isValid && !isRed && !isBlue && !isAiTurn && (
                     <div className="w-2.5 h-2.5 rounded-full bg-amber-400 animate-pulse" />
@@ -998,7 +1107,7 @@ export default function GameBoard({ gameMinutes = 3, gameMode = 'ranked', onBack
           )}
         </div>
 
-        {/* Barricades */}
+        {/* Barricades (Themed Gradients) */}
         <div className="absolute inset-3 pointer-events-none">
           {walls.map((w, idx) => {
             const leftPct = (w.c + 1) * (100 / 9);
@@ -1014,7 +1123,7 @@ export default function GameBoard({ gameMinutes = 3, gameMode = 'ranked', onBack
                     width: `${200 / 9}%`,
                     height: '8px',
                   }}
-                  className="absolute bg-gradient-to-r from-amber-400 via-amber-500 to-amber-600 rounded-full shadow-lg shadow-amber-500/50 border border-amber-300 z-20"
+                  className={`absolute bg-gradient-to-r ${activeTheme.wallGradient} rounded-full shadow-lg border ${activeTheme.wallBorder} z-20`}
                 />
               );
             } else {
@@ -1027,7 +1136,7 @@ export default function GameBoard({ gameMinutes = 3, gameMode = 'ranked', onBack
                     width: '8px',
                     height: `${200 / 9}%`,
                   }}
-                  className="absolute bg-gradient-to-b from-amber-400 via-amber-500 to-amber-600 rounded-full shadow-lg shadow-amber-500/50 border border-amber-300 z-20"
+                  className={`absolute bg-gradient-to-b ${activeTheme.wallGradient} rounded-full shadow-lg border ${activeTheme.wallBorder} z-20`}
                 />
               );
             }
@@ -1230,7 +1339,7 @@ export default function GameBoard({ gameMinutes = 3, gameMode = 'ranked', onBack
         gameMode={gameMode}
         opponentName={
           gameMode === 'ai'
-            ? 'StockBot (AI)'
+            ? `StockBot [${aiDifficulty.toUpperCase()}]`
             : gameMode === 'friend'
             ? 'Friend'
             : 'kamal47'
