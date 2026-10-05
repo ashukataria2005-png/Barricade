@@ -515,6 +515,14 @@ export default function App() {
                 <span className="font-mono text-cyan-300 text-[11px] font-bold">{userStats.gems || 150}</span>
               </div>
               <div
+                onClick={() => setShowStoreModal(true)}
+                className="flex items-center gap-1 bg-cardDark hover:bg-borderDark px-2 py-1 rounded-full border border-amber-500/40 text-xs cursor-pointer shadow-xs transition"
+                title="Coins Wallet"
+              >
+                <span className="text-xs leading-none">🪙</span>
+                <span className="font-mono text-amber-300 text-[11px] font-bold">{userStats.coins ?? 250}</span>
+              </div>
+              <div
                 onClick={() => setShowProfileEditModal(true)}
                 className="flex items-center gap-1.5 bg-cardDark hover:bg-borderDark px-2.5 py-1 rounded-full border border-borderDark text-xs font-semibold transition cursor-pointer"
                 title="Edit Profile"
@@ -604,7 +612,12 @@ export default function App() {
               incrementSeconds={sandboxRules.incrementSeconds}
             />
           ) : isWatchingTv ? (
-            <WatchView onBack={() => setIsWatchingTv(false)} />
+            <WatchView
+              theme={currentTheme}
+              equippedCosmetics={cosmetics?.equipped}
+              onBack={() => setIsWatchingTv(false)}
+              onStatsUpdate={(updated) => setUserStats(updated)}
+            />
           ) : (
             <>
               {activeTab === 'play' && (

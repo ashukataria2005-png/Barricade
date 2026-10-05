@@ -41,6 +41,7 @@ export const DEFAULT_STATS = {
   xp: 340,
   level: 3,
   gems: 150,
+  coins: 250,
   games: 34,
   wins: 18,
   losses: 16,
@@ -72,7 +73,12 @@ export const getStoredStats = () => {
       localStorage.setItem(STATS_KEY, JSON.stringify(DEFAULT_STATS));
       return DEFAULT_STATS;
     }
-    return { ...DEFAULT_STATS, ...JSON.parse(raw) };
+    const parsed = JSON.parse(raw);
+    return {
+      ...DEFAULT_STATS,
+      ...parsed,
+      coins: parsed.coins ?? 250,
+    };
   } catch (e) {
     return DEFAULT_STATS;
   }
@@ -83,6 +89,23 @@ export const saveStoredStats = (stats) => {
   try {
     localStorage.setItem(STATS_KEY, JSON.stringify(stats));
   } catch (e) {}
+};
+
+export const addCoins = (amount) => {
+  const current = getStoredStats();
+  const newCoins = Math.max(0, (current.coins ?? 250) + amount);
+  const updated = { ...current, coins: newCoins };
+  saveStoredStats(updated);
+  return updated;
+};
+
+export const deductCoins = (amount) => {
+  const current = getStoredStats();
+  const currentCoins = current.coins ?? 250;
+  if (currentCoins < amount) return false;
+  const updated = { ...current, coins: currentCoins - amount };
+  saveStoredStats(updated);
+  return updated;
 };
 
 export const addXPAndGems = (xpAmount = 0, gemsAmount = 0) => {
