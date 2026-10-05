@@ -31,14 +31,18 @@ let audioCtx = null;
 
 const getAudioContext = () => {
   if (typeof window === 'undefined') return null;
-  if (!audioCtx) {
-    const AudioContextClass = window.AudioContext || window.webkitAudioContext;
-    if (AudioContextClass) {
-      audioCtx = new AudioContextClass();
+  try {
+    if (!audioCtx) {
+      const AudioContextClass = window.AudioContext || window.webkitAudioContext;
+      if (AudioContextClass) {
+        audioCtx = new AudioContextClass();
+      }
     }
-  }
-  if (audioCtx && audioCtx.state === 'suspended') {
-    audioCtx.resume().catch(() => {});
+    if (audioCtx && audioCtx.state === 'suspended') {
+      audioCtx.resume().catch(() => {});
+    }
+  } catch (e) {
+    return null;
   }
   return audioCtx;
 };
@@ -457,6 +461,28 @@ export default function GameBoard({
     };
   }, [gameMode, multiplayerSession, redPos, bluePos, walls, redWalls, blueWalls, myColor]);
 
+  // Resume AudioContext on first user interaction for iOS Safari / Chrome autoplay policy
+  useEffect(() => {
+    const unlockAudio = () => {
+      try {
+        const ctx = getAudioContext();
+        if (ctx && ctx.state === 'suspended') {
+          ctx.resume().catch(() => {});
+        }
+      } catch (e) {}
+    };
+
+    window.addEventListener('touchstart', unlockAudio, { once: true, passive: true });
+    window.addEventListener('pointerdown', unlockAudio, { once: true, passive: true });
+    window.addEventListener('click', unlockAudio, { once: true, passive: true });
+
+    return () => {
+      window.removeEventListener('touchstart', unlockAudio);
+      window.removeEventListener('pointerdown', unlockAudio);
+      window.removeEventListener('click', unlockAudio);
+    };
+  }, []);
+
   // Audio & Haptics dispatcher
   const playAudio = (type) => {
     const settings = getStoredSettings();
@@ -474,11 +500,20 @@ export default function GameBoard({
       const vol = (settings.volume ?? 80) / 100;
       const ctx = getAudioContext();
       if (!ctx) return;
-      if (type === 'move') playMoveSound(ctx, vol);
-      else if (type === 'wall') playWallSound(ctx, vol);
-      else if (type === 'invalid') playInvalidSound(ctx, vol);
-      else if (type === 'win') playWinSound(ctx, vol);
-      else if (type === 'loss') playLossSound(ctx, vol);
+
+      const executeSound = () => {
+        if (type === 'move') playMoveSound(ctx, vol);
+        else if (type === 'wall') playWallSound(ctx, vol);
+        else if (type === 'invalid') playInvalidSound(ctx, vol);
+        else if (type === 'win') playWinSound(ctx, vol);
+        else if (type === 'loss') playLossSound(ctx, vol);
+      };
+
+      if (ctx.state === 'suspended') {
+        ctx.resume().then(() => executeSound()).catch(() => executeSound());
+      } else {
+        executeSound();
+      }
     } catch (e) {}
   };
 
