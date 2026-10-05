@@ -222,6 +222,10 @@ export default function GameBoard({
   const [blueTime, setBlueTime] = useState(initialSeconds);
   const [redTime, setRedTime] = useState(initialSeconds);
 
+  // Dynamic Best-of-3 Series Tracking: First to 3 wins takes the set!
+  const [seriesScore, setSeriesScore] = useState({ you: 0, opponent: 0 });
+  const [setWonBanner, setSetWonBanner] = useState(null);
+
   // Result state
   const [gameResult, setGameResult] = useState(null);
   const [warningMsg, setWarningMsg] = useState('');
@@ -586,8 +590,35 @@ export default function GameBoard({
       snapshots: gameSnapshots,
       moveHistory,
     });
-    setUserStats(updated);
-    if (onStatsUpdate) onStatsUpdate(updated);
+
+    // Dynamic Best-of-3 Set Series tracking
+    const newYouWins = result.isYouWin ? seriesScore.you + 1 : seriesScore.you;
+    const newOpponentWins = !result.isYouWin ? seriesScore.opponent + 1 : seriesScore.opponent;
+    const nextSeries = { you: newYouWins, opponent: newOpponentWins };
+    setSeriesScore(nextSeries);
+
+    let finalStats = updated;
+    if (newYouWins >= 3) {
+      setSetWonBanner({
+        winner: 'you',
+        message: `🏆 Set Won! (${newYouWins}-${newOpponentWins})`,
+      });
+      finalStats = {
+        ...updated,
+        setsWon: (updated.setsWon || 0) + 1,
+      };
+      saveStoredStats(finalStats);
+    } else if (newOpponentWins >= 3) {
+      setSetWonBanner({
+        winner: 'opponent',
+        message: `Set Completed (${newYouWins}-${newOpponentWins})`,
+      });
+    } else {
+      setSetWonBanner(null);
+    }
+
+    setUserStats(finalStats);
+    if (onStatsUpdate) onStatsUpdate(finalStats);
 
     // Evaluate match achievements & notify
     const durationSeconds = Math.round((Date.now() - matchStartTimeRef.current) / 1000);
@@ -1294,6 +1325,12 @@ export default function GameBoard({
   ]);
 
   const restartGame = () => {
+    // If a set was completed (either player reached 3 wins), reset series score for next set
+    if (seriesScore.you >= 3 || seriesScore.opponent >= 3) {
+      setSeriesScore({ you: 0, opponent: 0 });
+      setSetWonBanner(null);
+    }
+
     const freshSeconds = (gameMinutes || 3) * 60;
     matchStartTimeRef.current = Date.now();
     wallsPlacedInMatchRef.current = 0;
@@ -1878,21 +1915,84 @@ export default function GameBoard({
                 : `${userStats.elo + Math.abs(gameResult.eloDelta)} → ${userStats.elo}`}
             </div>
 
-            <div className="flex items-center gap-2 mb-2 text-xs font-bold text-gray-400">
-              <span className="text-[10px] tracking-widest text-gray-500">SET</span>
-              <div className="w-5 h-5 rounded-full bg-rose-500/20 border border-rose-500 flex items-center justify-center text-rose-400 text-xs">
-                ✕
+            {/* Dynamic Best-of-3 / 3-Win Set Tracking */}
+            <div className="flex flex-col items-center gap-2 mb-4 w-full bg-bgDark/60 border border-borderDark/60 rounded-2xl p-3 shadow-inner">
+              <div className="flex items-center justify-between w-full px-1">
+                <span className="text-[10px] font-bold text-gray-400 tracking-widest uppercase">
+                  Best of 3 Sets
+                </span>
+                <span className="text-xs font-mono font-bold text-brandOrange">
+                  {seriesScore.you} - {seriesScore.opponent}
+                </span>
               </div>
-              <div className="w-5 h-5 rounded-full bg-rose-500/20 border border-rose-500 flex items-center justify-center text-rose-400 text-xs">
-                ✕
+
+              {/* Opponent Wins / Crosses */}
+              <div className="flex items-center justify-between w-full px-1 text-xs">
+                <span className="text-[11px] text-gray-400 font-medium truncate max-w-[130px]">
+                  {gameMode === 'ai' ? 'StockBot' : opponentName || 'Opponent'}
+                </span>
+                <div className="flex items-center gap-1.5">
+                  {[0, 1, 2].map((idx) => {
+                    const filled = idx < seriesScore.opponent;
+                    return (
+                      <div
+                        key={`opp-${idx}`}
+                        className={`w-6 h-6 rounded-full border flex items-center justify-center text-xs font-bold transition-all ${
+                          filled
+                            ? 'bg-blue-500/20 border-blue-500 text-blue-400 shadow-sm shadow-blue-500/30'
+                            : 'border-borderDark/60 bg-cardDark/40 text-transparent'
+                        }`}
+                      >
+                        {filled ? '✕' : ''}
+                      </div>
+                    );
+                  })}
+                </div>
               </div>
-              <div className="w-5 h-5 rounded-full border border-gray-600" />
+
+              {/* You Wins / Crosses */}
+              <div className="flex items-center justify-between w-full px-1 text-xs">
+                <span className="text-[11px] text-gray-200 font-bold truncate max-w-[130px]">
+                  {userStats.username || 'You'}
+                </span>
+                <div className="flex items-center gap-1.5">
+                  {[0, 1, 2].map((idx) => {
+                    const filled = idx < seriesScore.you;
+                    return (
+                      <div
+                        key={`you-${idx}`}
+                        className={`w-6 h-6 rounded-full border flex items-center justify-center text-xs font-bold transition-all ${
+                          filled
+                            ? 'bg-rose-500/20 border-rose-500 text-rose-400 shadow-sm shadow-rose-500/30'
+                            : 'border-borderDark/60 bg-cardDark/40 text-transparent'
+                        }`}
+                      >
+                        {filled ? '✕' : ''}
+                      </div>
+                    );
+                  })}
+                </div>
+              </div>
+
+              {/* Prominent Set Banner or Series Status */}
+              {setWonBanner ? (
+                <div
+                  className={`mt-1 py-1.5 px-3 rounded-xl text-xs font-black tracking-wide w-full text-center transition animate-bounce ${
+                    setWonBanner.winner === 'you'
+                      ? 'bg-emerald-500/20 text-emerald-300 border border-emerald-500/60 shadow-md'
+                      : 'bg-zinc-800 text-gray-300 border border-borderDark'
+                  }`}
+                >
+                  {setWonBanner.message}
+                </div>
+              ) : (
+                <p className="text-[10px] text-gray-400 mt-0.5">
+                  {gameResult.isYouWin
+                    ? `Match won! ${3 - seriesScore.you} more win${3 - seriesScore.you > 1 ? 's' : ''} to complete Set.`
+                    : `Match lost. Rematch to defend the Set!`}
+                </p>
+              )}
             </div>
-            <p className="text-[10px] text-gray-500 mb-5">
-              {gameResult.isYouWin
-                ? 'Set won — excellent victory!'
-                : 'Set complete — match ended.'}
-            </p>
 
             <button
               type="button"

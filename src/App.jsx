@@ -505,21 +505,15 @@ export default function App() {
               </h1>
             </div>
             <div className="flex items-center gap-2">
-              {/* Unified Store & Currency Pill (Gems & Coins) */}
+              {/* Diamonds Wallet & Store Pill */}
               <div
                 onClick={() => setShowStoreModal(true)}
-                className="flex items-center gap-2 bg-cardDark/90 hover:bg-borderDark/80 px-2.5 py-1 rounded-full border border-borderDark/70 text-xs cursor-pointer shadow-xs transition active:scale-95"
-                title="Barricade Store & Wallet"
+                className="flex items-center gap-1.5 bg-cardDark/90 hover:bg-borderDark/80 px-3 py-1 rounded-full border border-cyan-500/40 text-xs cursor-pointer shadow-xs transition active:scale-95"
+                title="Barricade Store & Diamond Wallet"
               >
-                <div className="flex items-center gap-1">
-                  <Gem className="text-cyan-400" size={13} />
-                  <span className="font-mono text-cyan-300 text-[11px] font-bold">{userStats.gems || 150}</span>
-                </div>
-                <div className="w-[1px] h-3 bg-borderDark/60" />
-                <div className="flex items-center gap-1">
-                  <span className="text-xs leading-none">🪙</span>
-                  <span className="font-mono text-amber-300 text-[11px] font-bold">{userStats.coins ?? 250}</span>
-                </div>
+                <Gem className="text-cyan-400" size={13} />
+                <span className="font-mono text-cyan-300 text-[11px] font-bold">{userStats.gems || 150}</span>
+                <span className="text-[10px] text-cyan-400 font-semibold hidden xs:inline">💎</span>
               </div>
 
               {/* Profile Avatar Chip */}

@@ -9,13 +9,13 @@ import {
   Zap,
   Shield,
   Trophy,
-  Coins,
+  Gem,
   ChevronRight,
   Flame,
   Volume2,
   Sparkles
 } from 'lucide-react';
-import { getStoredStats, addCoins, deductCoins } from '../utils/stats';
+import { getStoredStats, addGems, deductGems } from '../utils/stats';
 import { getStoredTheme } from '../utils/themes';
 
 const BOT_CHAMPIONS_RED = [
@@ -228,7 +228,7 @@ export default function WatchView({ onBack, theme, equippedCosmetics, onStatsUpd
       const winningColor = winner === redBot.name ? 'red' : 'blue';
       if (prediction === winningColor) {
         setPredictionResult('won');
-        const updated = addCoins(50);
+        const updated = addGems(25);
         setUserWallet(updated);
         onStatsUpdate?.(updated);
         playCelebrationChime();
@@ -327,12 +327,12 @@ export default function WatchView({ onBack, theme, equippedCosmetics, onStatsUpd
   // Prediction Handler
   const handlePredict = (color) => {
     if (prediction) return;
-    const currentCoins = userWallet.coins ?? 250;
-    if (currentCoins < 25) {
-      alert('You need at least 25 coins to place a prediction bet!');
+    const currentGems = userWallet.gems ?? 150;
+    if (currentGems < 10) {
+      alert('You need at least 10 Diamonds to place a prediction bet!');
       return;
     }
-    const updated = deductCoins(25);
+    const updated = deductGems(10);
     if (updated) {
       setUserWallet(updated);
       onStatsUpdate?.(updated);
@@ -412,9 +412,9 @@ export default function WatchView({ onBack, theme, equippedCosmetics, onStatsUpd
 
         <div className="flex items-center gap-2">
           {/* User Wallet Balance */}
-          <div className="flex items-center gap-1 bg-amber-500/10 border border-amber-500/30 px-2.5 py-0.5 rounded-full text-xs font-bold text-amber-300">
-            <Coins size={12} className="text-amber-400" />
-            <span className="font-mono">{userWallet.coins ?? 250}</span>
+          <div className="flex items-center gap-1.5 bg-cyan-500/10 border border-cyan-500/40 px-2.5 py-0.5 rounded-full text-xs font-bold text-cyan-300">
+            <Gem size={12} className="text-cyan-400" />
+            <span className="font-mono">{userWallet.gems ?? 150}</span>
           </div>
 
           {/* Live Badge */}
@@ -650,12 +650,12 @@ export default function WatchView({ onBack, theme, equippedCosmetics, onStatsUpd
 
       {/* Bot Match Prediction Wager Strip */}
       {!winner && !prediction && moveCount <= 10 && (
-        <div className="bg-gradient-to-r from-amber-500/10 via-cardDark to-amber-500/10 border border-amber-500/30 p-2.5 rounded-2xl flex flex-col gap-1.5 shadow-lg animate-in fade-in">
+        <div className="bg-gradient-to-r from-cyan-500/10 via-cardDark to-cyan-500/10 border border-cyan-500/30 p-2.5 rounded-2xl flex flex-col gap-1.5 shadow-lg animate-in fade-in">
           <div className="flex items-center justify-between text-xs">
-            <span className="font-bold text-amber-200 flex items-center gap-1.5">
-              <span>🎯</span> Predict Winner (Bet 25 🪙 · Win 50 🪙)
+            <span className="font-bold text-cyan-200 flex items-center gap-1.5">
+              <span>🎯</span> Predict Winner (Bet 10 💎 · Win 25 💎)
             </span>
-            <span className="text-[10px] text-gray-400 font-mono">Wallet: {userWallet.coins ?? 250} 🪙</span>
+            <span className="text-[10px] text-gray-400 font-mono">Wallet: {userWallet.gems ?? 150} 💎</span>
           </div>
 
           <div className="grid grid-cols-2 gap-2 mt-0.5">
@@ -679,9 +679,9 @@ export default function WatchView({ onBack, theme, equippedCosmetics, onStatsUpd
 
       {/* Active Prediction Locked Badge */}
       {!winner && prediction && (
-        <div className="bg-cardDark border border-amber-500/40 p-2 rounded-xl flex items-center justify-between text-xs text-amber-200">
+        <div className="bg-cardDark border border-cyan-500/40 p-2 rounded-xl flex items-center justify-between text-xs text-cyan-200">
           <div className="flex items-center gap-1.5">
-            <span className="w-2 h-2 rounded-full bg-amber-400 animate-pulse" />
+            <span className="w-2 h-2 rounded-full bg-cyan-400 animate-pulse" />
             <span>
               Predicted:{' '}
               <strong className="text-white">
@@ -689,7 +689,7 @@ export default function WatchView({ onBack, theme, equippedCosmetics, onStatsUpd
               </strong>
             </span>
           </div>
-          <span className="text-[11px] font-bold text-green-400 font-mono">+50 🪙 on Win</span>
+          <span className="text-[11px] font-bold text-cyan-400 font-mono">+25 💎 on Win</span>
         </div>
       )}
 
@@ -710,7 +710,7 @@ export default function WatchView({ onBack, theme, equippedCosmetics, onStatsUpd
               }`}
             >
               {predictionResult === 'won'
-                ? '🎉 Prediction Correct! You won +50 Coins!'
+                ? '🎉 Prediction Correct! You won +25 Diamonds! 💎'
                 : `Prediction incorrect! Better luck in the next match.`}
             </div>
           )}

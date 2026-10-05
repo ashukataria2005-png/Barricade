@@ -41,7 +41,7 @@ export const DEFAULT_STATS = {
   xp: 340,
   level: 3,
   gems: 150,
-  coins: 250,
+  setsWon: 0,
   games: 34,
   wins: 18,
   losses: 16,
@@ -77,7 +77,8 @@ export const getStoredStats = () => {
     return {
       ...DEFAULT_STATS,
       ...parsed,
-      coins: parsed.coins ?? 250,
+      gems: parsed.gems ?? 150,
+      setsWon: parsed.setsWon ?? 0,
     };
   } catch (e) {
     return DEFAULT_STATS;
@@ -91,22 +92,26 @@ export const saveStoredStats = (stats) => {
   } catch (e) {}
 };
 
-export const addCoins = (amount) => {
+export const addGems = (amount) => {
   const current = getStoredStats();
-  const newCoins = Math.max(0, (current.coins ?? 250) + amount);
-  const updated = { ...current, coins: newCoins };
+  const newGems = Math.max(0, (current.gems || 0) + amount);
+  const updated = { ...current, gems: newGems };
   saveStoredStats(updated);
   return updated;
 };
 
-export const deductCoins = (amount) => {
+export const deductGems = (amount) => {
   const current = getStoredStats();
-  const currentCoins = current.coins ?? 250;
-  if (currentCoins < amount) return false;
-  const updated = { ...current, coins: currentCoins - amount };
+  const currentGems = current.gems || 0;
+  if (currentGems < amount) return false;
+  const updated = { ...current, gems: currentGems - amount };
   saveStoredStats(updated);
   return updated;
 };
+
+// Aliases for backwards compatibility
+export const addCoins = addGems;
+export const deductCoins = deductGems;
 
 export const addXPAndGems = (xpAmount = 0, gemsAmount = 0) => {
   const current = getStoredStats();
